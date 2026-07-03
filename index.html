@@ -363,6 +363,14 @@ function categories(){ return [...new Set(DB.types.map(t=>t.category))]; }
 function isOdeloType(t){ return t.category==='Одела'; }
 function isKosulaType(t){ return t.category==='Кошули'; }
 function isKondurType(t){ const c=(t.category||'').toLowerCase(); return c.includes('кондур')||c.includes('патик')||c.includes('обувк'); }
+// проверува дали производот одговара на пребарувањето — по име, категорија или име на подтип/боја (пр. "Црно")
+function typeMatchesQuery(t,q){
+  if(!q) return true;
+  if(t.name.toLowerCase().includes(q)) return true;
+  if((t.category||'').toLowerCase().includes(q)) return true;
+  if(t.subtypes && t.subtypes.some(s=>(s.name||'').toLowerCase().includes(q))) return true;
+  return false;
+}
 
 /* ======================= STATE ======================= */
 let authUser = null;
@@ -855,7 +863,7 @@ function renderSaleView(){
 
   // filter types
   let visible = DB.types.filter(t=>{
-    if(q) return t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q);
+    if(q) return typeMatchesQuery(t,q);
     return t.category === state.saleCat;
   });
 
@@ -1223,7 +1231,7 @@ function renderRobaVnesView(){
   </div>`;
 
   const items = q
-    ? DB.types.filter(t=>t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q))
+    ? DB.types.filter(t=>typeMatchesQuery(t,q))
     : DB.types.filter(t=>t.category===state.robaCat);
 
   const allOpen = items.length>0 && items.every(t=>state.robaOpen.has(t.id));
@@ -1244,7 +1252,7 @@ function renderRobaVnesView(){
 function toggleAllRoba(allOpen){
   const q = (state.robaSearch||'').toLowerCase().trim();
   const items = q
-    ? DB.types.filter(t=>t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q))
+    ? DB.types.filter(t=>typeMatchesQuery(t,q))
     : DB.types.filter(t=>t.category===state.robaCat);
   items.forEach(t=> allOpen ? state.robaOpen.delete(t.id) : state.robaOpen.add(t.id));
   render();
@@ -1414,21 +1422,23 @@ function renderRobaTekovnaView(){
   const q=(state.robaTekSearch||'').trim().toLowerCase();
   const catIco=c=>{const l=(c||'').toLowerCase();if(l.includes('одел'))return'🧥';if(l.includes('кошул'))return'👔';if(l.includes('кондур'))return'👞';if(l.includes('патик'))return'👟';if(l.includes('обувк'))return'👞';if(l.includes('каиш'))return'🪢';if(l.includes('крават'))return'👒';return'📦';};
 
-  // производи во тековно избраната категорија (бројачите и филтерот гледаат ТУКА, не низ сите категории)
-  const catItems = DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
+  // база: ако пребарувам, гледам низ СИТЕ категории (по име, категорија и подтип/боја); инаку само тековно избраната категорија
+  const baseItems = q
+    ? DB.types.filter(t=>!t.noStock && typeMatchesQuery(t,q))
+    : DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
 
-  // alert counts — по производ во оваа категорија, производ може да брои и во повеќе кутии (пр. има и црвен и жолт подтип)
+  // alert counts — сметани од ИСТАТА база што се прикажува (за да се согласуваат бројките со картичките)
   let cntRed=0,cntYellow=0,cntGreen=0;
-  catItems.forEach(t=>{
+  baseItems.forEach(t=>{
     if(typeHasStatus(t,'red')) cntRed++;
     if(typeHasStatus(t,'yellow')) cntYellow++;
     if(typeHasStatus(t,'green')) cntGreen++;
   });
 
-  const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';state.robaTekFilter='all';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
+  const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${!q&&state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';state.robaTekFilter='all';state.robaTekSearch='';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
 
   const searchHtml=`<div class="field" style="margin-bottom:14px;">
-    <input type="text" id="robaTekSearchInput" value="${state.robaTekSearch||''}" placeholder="🔍 пребарај производ..." oninput="state.robaTekSearch=this.value;render()">
+    <input type="text" id="robaTekSearchInput" value="${state.robaTekSearch||''}" placeholder="🔍 пребарај производ, боја или подтип..." oninput="state.robaTekSearch=this.value;render()">
   </div>`;
 
   const filterBar=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
@@ -1438,9 +1448,7 @@ function renderRobaTekovnaView(){
     <button style="background:${f==='green'?'#e8f5e9':'#fff'};border:1.5px solid ${f==='green'?'#66bb6a':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#2e7d32;cursor:pointer;" onclick="state.robaTekFilter='green';render()">🟢 Комплет (${cntGreen})</button>
   </div>`;
 
-  let items = q
-    ? DB.types.filter(t=>!t.noStock && t.name.toLowerCase().includes(q))
-    : catItems;
+  let items = baseItems;
   if(f!=='all') items=items.filter(t=>typeHasStatus(t,f));
 
   const cards=items.map(t=>{
@@ -1479,7 +1487,7 @@ function renderRobaTekovnaView(){
     return `<div class="rt-card" style="border-color:${borderClr};"><div class="rt-card-head"><span class="rt-name">${t.name}</span><span class="rt-price">${fmt(t.price)}</span></div><div class="rt-body">${body}</div></div>`;
   }).join('');
 
-  return `<h2>Тековна роба</h2>${tabs}${searchHtml}${filterBar}${items.length===0?`<div class="empty"><div class="ico">📦</div>${q?'Нема производи според пребарувањето.':(f==='all'?'Нема производи во оваа категорија.':'Нема производи со овој статус.')}</div>`:`<div class="rt-grid">${cards}</div>`}`;
+  return `<h2>Тековна роба</h2>${q?'':tabs}${searchHtml}${filterBar}${items.length===0?`<div class="empty"><div class="ico">📦</div>${q?'Нема производи според пребарувањето.':(f==='all'?'Нема производи во оваа категорија.':'Нема производи со овој статус.')}</div>`:`<div class="rt-grid">${cards}</div>`}`;
 }
 
 
