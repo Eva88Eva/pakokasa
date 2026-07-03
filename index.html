@@ -362,7 +362,7 @@ function typeTotalStock(t){
 function categories(){ return [...new Set(DB.types.map(t=>t.category))]; }
 function isOdeloType(t){ return t.category==='Одела'; }
 function isKosulaType(t){ return t.category==='Кошули'; }
-function isKondurType(t){ return t.category==='Кондури'||t.category==='Патики'; }
+function isKondurType(t){ const c=(t.category||'').toLowerCase(); return c.includes('кондур')||c.includes('патик')||c.includes('обувк'); }
 
 /* ======================= STATE ======================= */
 let authUser = null;
@@ -414,7 +414,7 @@ let state = {
   view:'sale', sidebarOpen:false, cart:[],
   customerName:'', customerPhone:'', customerComment:'', noContact:false, paymentType:'paid', depositAmount:'', discountAmount:'', saleDate: todayStr(),
   ownerUnlocked:false, pinEntry:'', custSearch:'',
-  kasaDate: todayStr(), kasaBreakdown: false, robaCat:null, robaTekCat:null, robaTekFilter:'all', robaOpen: new Set(), robaSearch:'', saleSearch:'', saleCat:null,
+  kasaDate: todayStr(), kasaBreakdown: false, robaCat:null, robaTekCat:null, robaTekFilter:'all', robaTekSearch:'', robaOpen: new Set(), robaSearch:'', saleSearch:'', saleCat:null,
   picker:null, /* {typeId, subId, subSearch, size, qty} */
   saleSelect:{} // typeId -> {subId, size, qty}
 };
@@ -1355,50 +1355,81 @@ function kondurExpectedSizes(t){
   if(t.price>=3400) return ['40','41','42','43','44','45','46','47'];
   return ['40','41','42','43','44'];
 }
-// статус на производ за филтрирање
-function typeStatus(t){
+// статус на кондур/патика серија (подтип) според КОЛКУ БРОЈКИ ИМА (не мешано меѓу подтипови)
+// комплет = сите бројки ги има; средно = дел фалат (до половина); црвено = остануваат само 1-2 бројки
+function kondurSeriesStatus(present,total){
+  if(present>=total) return 'green';
+  if(present<=2) return 'red';
+  return 'yellow';
+}
+function kondurSeriesBadge(present,total){
+  const missing=total-present;
+  const st=kondurSeriesStatus(present,total);
+  if(st==='green') return '<span class="series-badge green">🟢 Комплет</span>';
+  if(st==='yellow') return `<span class="series-badge yellow">🟡 Средно (фалат ${missing})</span>`;
+  return `<span class="series-badge red">🔴 Нарачај (фалат ${missing})</span>`;
+}
+// листа на статуси по СЕКОЈА поединечна серија (подтип) на еден производ
+function typeSeriesStatuses(t){
   if(!t.sized){
-    const q=t.qty||0; return q<=2?'red':q<=5?'yellow':'green';
+    const q=t.qty||0; return [q<=2?'red':q<=5?'yellow':'green'];
   }
   if(isOdeloType(t)){
     const series=t.subtypes.length>0?t.subtypes:[{sizes:t.directSizes}];
-    const statuses=series.map(s=>seriesStatus(Object.entries(s.sizes||{}).filter(([,q])=>q>0).length));
-    if(statuses.includes('red')) return 'red';
-    if(statuses.includes('yellow')) return 'yellow';
-    return 'green';
+    return series.map(s=>seriesStatus(Object.entries(s.sizes||{}).filter(([,q])=>q>0).length));
   }
   if(isKosulaType(t)){
-    const pool=t.subtypes.length>0?t.subtypes.flatMap(s=>Object.values(s.sizes)):Object.values(t.directSizes);
-    if(pool.some(q=>q<5)) return 'red';
-    if(pool.some(q=>q<10)) return 'yellow';
-    return 'green';
+    const series=t.subtypes.length>0?t.subtypes.map(s=>s.sizes):[t.directSizes];
+    return series.map(sizes=>{
+      const pool=Object.values(sizes||{});
+      if(pool.length===0) return 'red';
+      if(pool.some(q=>q<5)) return 'red';
+      if(pool.some(q=>q<10)) return 'yellow';
+      return 'green';
+    });
   }
   if(isKondurType(t)){
     const expected=kondurExpectedSizes(t);
-    const allSizes=t.subtypes.length>0
-      ?Object.fromEntries(t.subtypes.flatMap(s=>Object.entries(s.sizes)))
-      :t.directSizes;
-    if(expected.some(sz=>!allSizes[sz]||(allSizes[sz]||0)===0)) return 'red';
-    return 'green';
+    const series=t.subtypes.length>0?t.subtypes.map(s=>s.sizes||{}):[t.directSizes||{}];
+    return series.map(sizes=>{
+      const present=expected.filter(sz=>sizes[sz]>0).length;
+      return kondurSeriesStatus(present,expected.length);
+    });
   }
+  return ['green'];
+}
+// статус на цел производ (најлош случај меѓу неговите серии) — се користи само за боја на рамка на картичка
+function typeStatus(t){
+  const statuses=typeSeriesStatuses(t);
+  if(statuses.includes('red')) return 'red';
+  if(statuses.includes('yellow')) return 'yellow';
   return 'green';
 }
+// дали производот има БАРЕМ ЕДНА серија со дадениот статус — се користи за филтрирање/бројки
+function typeHasStatus(t,status){ return typeSeriesStatuses(t).includes(status); }
 function renderRobaTekovnaView(){
   const cats = categories();
   if(!state.robaTekCat||!cats.includes(state.robaTekCat)) state.robaTekCat=cats[0];
   const f=state.robaTekFilter||'all';
-  const catIco=c=>{const l=(c||'').toLowerCase();if(l.includes('одел'))return'🧥';if(l.includes('кошул'))return'👔';if(l.includes('кондур'))return'👞';if(l.includes('патик'))return'👟';if(l.includes('каиш'))return'🪢';if(l.includes('крават'))return'👒';return'📦';};
+  const q=(state.robaTekSearch||'').trim().toLowerCase();
+  const catIco=c=>{const l=(c||'').toLowerCase();if(l.includes('одел'))return'🧥';if(l.includes('кошул'))return'👔';if(l.includes('кондур'))return'👞';if(l.includes('патик'))return'👟';if(l.includes('обувк'))return'👞';if(l.includes('каиш'))return'🪢';if(l.includes('крават'))return'👒';return'📦';};
 
-  // alert counts — само по ПРОИЗВОД (не по бројка)
+  // производи во тековно избраната категорија (бројачите и филтерот гледаат ТУКА, не низ сите категории)
+  const catItems = DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
+
+  // alert counts — по производ во оваа категорија, производ може да брои и во повеќе кутии (пр. има и црвен и жолт подтип)
   let cntRed=0,cntYellow=0,cntGreen=0;
-  DB.types.filter(t=>!t.noStock).forEach(t=>{
-    const s=typeStatus(t);
-    if(s==='red') cntRed++;
-    else if(s==='yellow') cntYellow++;
-    else cntGreen++;
+  catItems.forEach(t=>{
+    if(typeHasStatus(t,'red')) cntRed++;
+    if(typeHasStatus(t,'yellow')) cntYellow++;
+    if(typeHasStatus(t,'green')) cntGreen++;
   });
 
-  const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
+  const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';state.robaTekFilter='all';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
+
+  const searchHtml=`<div class="field" style="margin-bottom:14px;">
+    <input type="text" id="robaTekSearchInput" value="${state.robaTekSearch||''}" placeholder="🔍 пребарај производ..." oninput="state.robaTekSearch=this.value;render()">
+  </div>`;
 
   const filterBar=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
     <button class="btn ${f==='all'?'gold':'outline'} sm" onclick="state.robaTekFilter='all';render()">Сè</button>
@@ -1407,14 +1438,15 @@ function renderRobaTekovnaView(){
     <button style="background:${f==='green'?'#e8f5e9':'#fff'};border:1.5px solid ${f==='green'?'#66bb6a':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#2e7d32;cursor:pointer;" onclick="state.robaTekFilter='green';render()">🟢 Комплет (${cntGreen})</button>
   </div>`;
 
-  let items=DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
-  if(f!=='all') items=items.filter(t=>typeStatus(t)===f);
+  let items=catItems;
+  if(f!=='all') items=items.filter(t=>typeHasStatus(t,f));
+  if(q) items=items.filter(t=>t.name.toLowerCase().includes(q));
 
   const cards=items.map(t=>{
     let body='';
     if(!t.sized){
-      const q=t.qty||0;const cls=q<=2?'bad':q<=5?'warn':'ok';
-      body=`<div class="rt-chip-row"><div class="rt-chip ${cls}"><span class="ch-lbl">залога</span><span class="ch-qty">${q}</span></div></div>`;
+      const qty=t.qty||0;const cls=qty<=2?'bad':qty<=5?'warn':'ok';
+      body=`<div class="rt-chip-row"><div class="rt-chip ${cls}"><span class="ch-lbl">залога</span><span class="ch-qty">${qty}</span></div></div>`;
     } else if(isOdeloType(t)){
       const series=t.subtypes.length>0?t.subtypes:[{name:'без подтип',sizes:t.directSizes}];
       body=series.map(s=>{
@@ -1429,13 +1461,14 @@ function renderRobaTekovnaView(){
         :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div>`;
     } else if(isKondurType(t)){
       const expected=kondurExpectedSizes(t);
-      const renderSizes=pool=>{
-        const merged={...pool};
-        return `<div class="rt-chip-row">${expected.map(sz=>kondurChip(sz,merged[sz]||0)).join('')}</div>`;
-      };
-      body=t.subtypes.length>0
-        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${renderSizes(s.sizes)}</div>`).join('')
-        :renderSizes(t.directSizes);
+      const seriesList=t.subtypes.length>0?t.subtypes:[{name:'',sizes:t.directSizes}];
+      body=seriesList.map(s=>{
+        const sizes=s.sizes||{};
+        const present=expected.filter(sz=>sizes[sz]>0).length;
+        const chips=expected.filter(sz=>sizes[sz]>0).map(sz=>kondurChip(sz,sizes[sz])).join('');
+        const head=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">${s.name?`<span class="small-muted" style="font-size:11px;font-weight:600;">${s.name}</span>`:'<span></span>'}${kondurSeriesBadge(present,expected.length)}</div>`;
+        return `<div style="margin-bottom:10px;">${head}<div class="rt-chip-row">${chips||'<span class="small-muted">Нема ниту една бројка.</span>'}</div></div>`;
+      }).join('');
     } else {
       body=t.subtypes.length>0
         ?t.subtypes.map(s=>`<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${Object.entries(s.sizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div></div>`).join('')
@@ -1446,7 +1479,7 @@ function renderRobaTekovnaView(){
     return `<div class="rt-card" style="border-color:${borderClr};"><div class="rt-card-head"><span class="rt-name">${t.name}</span><span class="rt-price">${fmt(t.price)}</span></div><div class="rt-body">${body}</div></div>`;
   }).join('');
 
-  return `<h2>Тековна роба</h2>${tabs}${filterBar}${items.length===0?`<div class="empty"><div class="ico">📦</div>${f==='all'?'Нема производи во оваа категорија.':'Нема производи со овој статус.'}</div>`:`<div class="rt-grid">${cards}</div>`}`;
+  return `<h2>Тековна роба</h2>${tabs}${searchHtml}${filterBar}${items.length===0?`<div class="empty"><div class="ico">📦</div>${q?'Нема производи според пребарувањето.':(f==='all'?'Нема производи во оваа категорија.':'Нема производи со овој статус.')}</div>`:`<div class="rt-grid">${cards}</div>`}`;
 }
 
 
