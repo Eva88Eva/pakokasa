@@ -422,6 +422,7 @@ let state = {
   view:'sale', sidebarOpen:false, cart:[],
   customerName:'', customerPhone:'', customerComment:'', noContact:false, paymentType:'paid', depositAmount:'', discountAmount:'', saleDate: todayStr(),
   ownerUnlocked:false, pinEntry:'', custSearch:'',
+  ownerYear: new Date().getFullYear().toString(), ownerMonth: new Date().getMonth()+1,
   kasaDate: todayStr(), kasaBreakdown: false, robaCat:null, robaTekCat:null, robaTekFilter:'all', robaTekSearch:'', robaOpen: new Set(), robaSearch:'', saleSearch:'', saleCat:null,
   picker:null, /* {typeId, subId, subSearch, size, qty} */
   saleSelect:{} // typeId -> {subId, size, qty}
@@ -683,14 +684,33 @@ async function setSimpleQty(typeId, val){
 }
 
 /* ======================= OWNER STATS ======================= */
-function computeStats(){
-  const y=yearStr(), m=monthStr();
-  let yearRev=0, monthRev=0, suitsSold=0;
+// Одредува во која "промет по категорија" група спаѓа одреден артикл
+function revenueCategoryBucket(t, itemName){
+  const cat = ((t && t.category) || '').toLowerCase();
+  const name = (itemName || (t && t.name) || '').toLowerCase();
+  if(cat.includes('одел')) return 'Одела';
+  if(cat.includes('кошул')) return 'Кошули';
+  if(cat.includes('обувк') || cat.includes('кондур') || cat.includes('патик')) return 'Кондури';
+  if(name.includes('лептир') || (name.includes('крават') && !name.includes('кутија'))) return 'Вратоврски';
+  if(name.includes('каиш')) return 'Каиши';
+  return 'Разни производи';
+}
+const REVENUE_CATEGORY_ORDER = ['Одела','Кошули','Кондури','Вратоврски','Каиши','Разни производи'];
+
+function computeStats(selYear, selMonth){
+  const y = selYear || yearStr(), m = selMonth || monthStr();
+  // Вкупен промет од продажби = целата вредност на направените продажби (без разлика дали се целосно исплатени)
+  let yearRevTotal=0, monthRevTotal=0;
+  // Моментален паричен промет = реалните пари влезени во дуќанот (капари + доплати + целосни исплати)
+  let yearRevCash=0, monthRevCash=0;
+  let suitsSold=0;
   const typeCounts={}, detailCounts={};
-  const revenueByDate={}; // date -> revenue
-  const revenueByMonth={}; // YYYY-MM -> revenue (this year)
+  const revenueByDate={}; // date -> паричен промет (реален прилив)
+  const revenueByMonth={}; // YYYY-MM -> паричен промет (реален прилив, за избраната година)
   const subtypeSalesByType={}; // typeId -> { typeLabel, data: {subName: qty} }
   const catBest={};
+  // Промет по категорија (Одела, Кошули, Кондури, Вратоврски, Каиши, Разни производи) за избраниот месец — вкупна вредност на продадени артикли
+  const categoryRevenue={}; REVENUE_CATEGORY_ORDER.forEach(c=>categoryRevenue[c]=0);
 
   // Customer new vs returning for selected month
   // A customer is "new" for month M if their first purchase is in M
@@ -711,11 +731,16 @@ function computeStats(){
   DB.sales.forEach(s=>{
     const sMonth = s.date.slice(0,7);
     const sYear = s.date.slice(0,4);
-    if(sYear===y) yearRev+=s.total;
-    if(sMonth===m) monthRev+=s.total;
+    // Вкупен промет од продажби — целата вредност на продажбата, без разлика на статусот на плаќање
+    if(sYear===y) yearRevTotal+=s.total;
+    if(sMonth===m) monthRevTotal+=s.total;
+    // Моментален паричен промет — само она што реално е платено во моментот на продажбата (капар или целосна исплата)
+    const paidNow = (typeof s.paidNow==='number') ? s.paidNow : s.total;
+    if(sYear===y) yearRevCash+=paidNow;
+    if(sMonth===m) monthRevCash+=paidNow;
     const d = s.date.slice(0,10);
-    revenueByDate[d] = (revenueByDate[d]||0)+s.total;
-    if(sYear===y) revenueByMonth[sMonth] = (revenueByMonth[sMonth]||0)+s.total;
+    revenueByDate[d] = (revenueByDate[d]||0)+paidNow;
+    if(sYear===y) revenueByMonth[sMonth] = (revenueByMonth[sMonth]||0)+paidNow;
 
     // Customer tracking for current month
     if(sMonth===m && s.customerId){
@@ -743,6 +768,25 @@ function computeStats(){
         const lbl = t.name+' '+t.price;
         catBest[t.category][lbl] = (catBest[t.category][lbl]||0)+it.qty;
       }
+      // Промет по категорија (Одела/Кошули/Кондури/Вратоврски/Каиши/Разни производи) — за избраниот месец, вкупна вредност на продадени артикли
+      if(sMonth===m){
+        const bucket = revenueCategoryBucket(t, it.name);
+        categoryRevenue[bucket] = (categoryRevenue[bucket]||0) + it.price*it.qty;
+      }
+    });
+  });
+
+  // Доплати на капар (и сите други последователни уплати) — реален паричен прилив на денот кога навистина се примени, без разлика кога е направена оригиналната продажба
+  DB.deposits.forEach(dep=>{
+    (dep.history||[]).forEach(h=>{
+      if(h.note==='Капар при продажба') return; // овој дел веќе е пресметан преку s.paidNow погоре
+      const hYear = h.date.slice(0,4);
+      const hMonth = h.date.slice(0,7);
+      if(hYear===y) yearRevCash += h.amount;
+      if(hMonth===m) monthRevCash += h.amount;
+      const hd = h.date.slice(0,10);
+      revenueByDate[hd] = (revenueByDate[hd]||0) + h.amount;
+      if(hYear===y) revenueByMonth[hMonth] = (revenueByMonth[hMonth]||0) + h.amount;
     });
   });
 
@@ -775,8 +819,10 @@ function computeStats(){
     return revenueByMonth[mm]||0;
   });
 
-  return {yearRev, monthRev, suitsSold, returning, topTypes, topDetail,
-    bestDay, bestDayRev, bestPerCategory, subtypeSalesByType,
+  const categoryRevenueList = REVENUE_CATEGORY_ORDER.map(c=>[c, categoryRevenue[c]||0]);
+
+  return {yearRevTotal, monthRevTotal, yearRevCash, monthRevCash, suitsSold, returning, topTypes, topDetail,
+    bestDay, bestDayRev, bestPerCategory, subtypeSalesByType, categoryRevenueList,
     monthDayLabels, monthDayData, yearMonthLabels, yearMonthData,
     custTotal: custSalesInMonth.size, custNew: custNewInMonth.size, custReturning: custReturningInMonth.size};
 }
@@ -1616,10 +1662,26 @@ function pinPress(n){
 function pinBack(){ state.pinEntry = state.pinEntry.slice(0,-1); render(); }
 
 /* ---------- OWNER STATS ---------- */
+function ownerAvailableYears(){
+  const years = new Set([new Date().getFullYear().toString()]);
+  DB.sales.forEach(s=>years.add(s.date.slice(0,4)));
+  DB.deposits.forEach(d=>(d.history||[]).forEach(h=>years.add(h.date.slice(0,4))));
+  return [...years].sort((a,b)=>b.localeCompare(a));
+}
+
+function setOwnerPeriod(field, val){
+  state[field] = field==='ownerMonth' ? parseInt(val) : val;
+  render();
+}
+
 function renderOwnerView(){
-  const s = computeStats();
   const mn = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
-  const curMonthName = mn[new Date().getMonth()] + ' ' + yearStr();
+  const selYear = state.ownerYear || new Date().getFullYear().toString();
+  const selMonthNum = state.ownerMonth || (new Date().getMonth()+1);
+  const selMonth = selYear + '-' + String(selMonthNum).padStart(2,'0');
+  const s = computeStats(selYear, selMonth);
+  const curMonthName = mn[selMonthNum-1] + ' ' + selYear;
+  const years = ownerAvailableYears();
 
   // Build type+subtype chart cards HTML
   let typeChartCards = '';
@@ -1629,29 +1691,77 @@ function renderOwnerView(){
     if(labels.length===0) return;
     typeChartCards += `
       <div class="card">
-        <div class="card-title">${entry.typeLabel} — продажба по подтип/број</div>
+        <div class="card-title">${entry.typeLabel} — продажба по подтип/број (${curMonthName})</div>
         <div class="chart-wrap"><canvas id="chartType${i}"></canvas></div>
       </div>`;
   });
+
+  const periodPicker = `
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title" style="margin-bottom:10px;">Период за извештајот</div>
+      <div class="row2">
+        <div class="field" style="margin:0;">
+          <label class="fl">Месец</label>
+          <select onchange="setOwnerPeriod('ownerMonth', this.value)">
+            ${mn.map((name,i)=>`<option value="${i+1}" ${selMonthNum===i+1?'selected':''}>${name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin:0;">
+          <label class="fl">Година</label>
+          <select onchange="setOwnerPeriod('ownerYear', this.value)">
+            ${years.map(yy=>`<option value="${yy}" ${selYear===yy?'selected':''}>${yy}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`;
+
+  const categoryRevenueCard = `
+    <div class="card">
+      <div class="card-title">Промет по категорија — ${curMonthName}</div>
+      <table><thead><tr><th>Категорија</th><th>Промет</th></tr></thead><tbody>
+        ${s.categoryRevenueList.map(([k,v])=>`<tr><td>${k}</td><td><b>${fmt(v)}</b></td></tr>`).join('')}
+      </tbody></table>
+      <div class="small-muted" style="margin-top:8px;">Вредноста ги опфаќа сите продажби направени во месецот (без разлика дали се целосно исплатени).</div>
+    </div>`;
 
   const html = `
     <h2>Извештај за сопственик</h2>
     <div class="flexbar"><div class="sub">Целосен преглед на промет и продажба</div><button class="btn outline sm" onclick="state.ownerUnlocked=false;render()">Заклучи</button></div>
 
+    ${periodPicker}
+
+    <div class="card" style="margin-top:14px;">
+      <div class="card-title" style="margin-bottom:10px;">Вкупен промет од продажби</div>
+      <div class="small-muted" style="margin-bottom:10px;">Вредноста на сите направени продажби, без разлика дали се целосно исплатени (вклучува и неисплатен остаток кај капари).</div>
+      <div class="stat-grid" style="margin-bottom:0;">
+        <div class="stat-box"><div class="lbl">${selYear} (година)</div><div class="val">${fmt(s.yearRevTotal)}</div></div>
+        <div class="stat-box"><div class="lbl">${curMonthName}</div><div class="val">${fmt(s.monthRevTotal)}</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:10px;">Моментален паричен промет</div>
+      <div class="small-muted" style="margin-bottom:10px;">Реални пари влезени во дуќанот: капари, доплати и целосно платени продажби.</div>
+      <div class="stat-grid" style="margin-bottom:0;">
+        <div class="stat-box alt"><div class="lbl">${selYear} (година)</div><div class="val">${fmt(s.yearRevCash)}</div></div>
+        <div class="stat-box alt"><div class="lbl">${curMonthName}</div><div class="val">${fmt(s.monthRevCash)}</div></div>
+      </div>
+    </div>
+
     <div class="stat-grid">
-      <div class="stat-box"><div class="lbl">Промет годинава</div><div class="val">${fmt(s.yearRev)}</div></div>
-      <div class="stat-box"><div class="lbl">Промет овој месец</div><div class="val">${fmt(s.monthRev)}</div></div>
-      <div class="stat-box alt"><div class="lbl">Продадени одела</div><div class="val">${s.suitsSold}</div></div>
+      <div class="stat-box alt"><div class="lbl">Продадени одела (${curMonthName})</div><div class="val">${s.suitsSold}</div></div>
       <div class="stat-box alt"><div class="lbl">Постојани муштерии</div><div class="val">${s.returning}</div></div>
     </div>
 
-    <div class="card" style="margin-top:18px;">
-      <div class="card-title">Промет по месец — ${yearStr()} (ден)</div>
+    ${categoryRevenueCard}
+
+    <div class="card">
+      <div class="card-title">Паричен промет по месец — ${selYear} (ден)</div>
       <div class="chart-wrap tall"><canvas id="chartYearMonths"></canvas></div>
     </div>
 
     <div class="card">
-      <div class="card-title">Промет по ден — ${curMonthName} (ден)</div>
+      <div class="card-title">Паричен промет по ден — ${curMonthName} (ден)</div>
       <div class="chart-wrap tall"><canvas id="chartMonthDays"></canvas></div>
     </div>
 
@@ -1671,11 +1781,11 @@ function renderOwnerView(){
     </div>
 
     <div class="card">
-      <div class="card-title">Најпродавани типови</div>
+      <div class="card-title">Најпродавани типови (${curMonthName})</div>
       ${s.topTypes.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Тип</th><th>Продадено</th></tr></thead><tbody>${s.topTypes.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
     </div>
     <div class="card">
-      <div class="card-title">Најпродавани конкретни ставки</div>
+      <div class="card-title">Најпродавани конкретни ставки (${curMonthName})</div>
       ${s.topDetail.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Ставка</th><th>Продадено</th></tr></thead><tbody>${s.topDetail.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
     </div>
     <div class="card">
@@ -1697,7 +1807,7 @@ function renderOwnerView(){
 
     // Year months chart
     const ctxY = document.getElementById('chartYearMonths');
-    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>i===new Date().getMonth()?gold:goldLight),borderRadius:6}]},options:chartDefaults});
+    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>i===selMonthNum-1?gold:goldLight),borderRadius:6}]},options:chartDefaults});
 
     // Month days chart
     const ctxM = document.getElementById('chartMonthDays');
