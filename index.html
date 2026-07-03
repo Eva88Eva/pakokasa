@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="mk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pako Classic — Менаџер на продажба</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+:root{
+  --navy:#101b2d; --navy-2:#1a2940; --cream:#f4efe4; --gold:#b08d4e; --gold-light:#d9bb7e;
+  --ink:#1c1f24; --muted:#8a93a3; --line:#2c3a54; --danger:#c0594b; --success:#5f8f6e; --warn:#c79a3a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',sans-serif;background:var(--cream);color:var(--ink);min-height:100vh;-webkit-font-smoothing:antialiased;}
+h1,h2,h3{font-family:'Playfair Display',serif;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+
+#app{display:flex;min-height:100vh;}
+.topbar{position:sticky;top:0;z-index:50;background:var(--navy);color:var(--cream);display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:2px solid var(--gold);}
+.hamburger{width:40px;height:40px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:transparent;color:var(--cream);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.hamburger:hover{background:rgba(255,255,255,.08);}
+.brand{display:flex;flex-direction:column;line-height:1.1;}
+.brand .name{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;}
+.brand .tag{font-size:10px;letter-spacing:2px;color:var(--gold-light);text-transform:uppercase;}
+.topbar-right{margin-left:auto;font-size:13px;color:var(--gold-light);text-align:right;}
+
+.overlay{position:fixed;inset:0;background:rgba(10,14,22,.5);z-index:60;display:none;}
+.overlay.show{display:block;}
+.sidebar{position:fixed;top:0;left:0;height:100%;width:280px;background:var(--navy-2);color:var(--cream);transform:translateX(-100%);transition:transform .25s ease;z-index:70;display:flex;flex-direction:column;border-right:2px solid var(--gold);}
+.sidebar.open{transform:translateX(0);}
+.sidebar-head{padding:22px 20px 16px;border-bottom:1px solid var(--line);}
+.sidebar-head .name{font-family:'Playfair Display',serif;font-size:21px;font-weight:700;}
+.sidebar-head .tag{font-size:11px;color:var(--gold-light);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;}
+.nav-list{list-style:none;flex:1;overflow-y:auto;padding:10px 0;}
+.nav-item{display:flex;align-items:center;gap:12px;padding:13px 22px;font-size:14.5px;font-weight:500;color:#d4d8e2;border-left:3px solid transparent;}
+.nav-item .ico{width:20px;text-align:center;flex-shrink:0;color:var(--gold-light);}
+.nav-item:hover{background:rgba(255,255,255,.05);}
+.nav-item.active{background:rgba(176,141,78,.13);border-left-color:var(--gold);color:#fff;}
+.sidebar-foot{padding:16px 20px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);}
+
+main{flex:1;min-width:0;}
+.view{padding:22px 18px 60px;max-width:980px;margin:0 auto;}
+.view h2{font-size:24px;margin-bottom:4px;color:var(--navy);}
+.view .sub{color:var(--muted);font-size:13.5px;margin-bottom:20px;}
+
+.card{background:#fff;border:1px solid #e4ddca;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,20,10,.04);}
+.card-title{font-family:'Playfair Display',serif;font-size:16px;font-weight:600;margin-bottom:14px;color:var(--navy);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+
+label.fl{display:block;font-size:12.5px;font-weight:600;color:#5b6372;margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px;}
+.field{margin-bottom:14px;}
+input[type=text],input[type=tel],input[type=number],input[type=password],select,textarea{
+  width:100%;padding:11px 13px;border:1.5px solid #ddd4bd;border-radius:8px;font-size:15px;background:#fffdf8;color:var(--ink);
+}
+select{appearance:none;background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a93a3' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:34px;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.row3{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;}
+@media (max-width:560px){.row2{grid-template-columns:1fr;}.row3{grid-template-columns:1fr;}}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 18px;border-radius:8px;border:1.5px solid var(--navy);background:var(--navy);color:#fff;font-weight:600;font-size:14px;}
+.btn:hover{background:var(--navy-2);}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#2a2008;}
+.btn.gold:hover{background:var(--gold-light);}
+.btn.outline{background:transparent;color:var(--navy);border-color:#cfc6ac;}
+.btn.outline:hover{background:#f3eee0;}
+.btn.danger{background:transparent;color:var(--danger);border-color:var(--danger);}
+.btn.danger:hover{background:#fbeae7;}
+.btn.block{width:100%;}
+.btn.sm{padding:7px 12px;font-size:13px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+
+.cat-label{font-size:11.5px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px;}
+.cat-label:first-child{margin-top:0;}
+
+.type-card{border:1.5px solid #e4ddca;border-radius:12px;padding:16px;margin-bottom:14px;background:#fffdf8;}
+.type-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+.type-head .tn{font-weight:700;color:var(--navy);font-size:15.5px;}
+.type-head .tp{color:var(--gold);font-weight:700;font-size:14px;}
+.subtype-card{border:1px solid #e8e1cc;border-radius:10px;padding:12px;margin:10px 0 0 0;background:#fff;}
+.subtype-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.subtype-head .sn{font-weight:600;color:var(--navy);font-size:14px;}
+.size-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.size-chip{display:flex;align-items:center;gap:6px;border:1px solid #ddd4bd;border-radius:8px;padding:5px 8px;background:#fff;font-size:13px;}
+.size-chip b{color:var(--navy);}
+.size-chip input{width:50px;padding:4px 6px;font-size:13px;border:1px solid #ddd4bd;border-radius:6px;}
+.size-chip .rm{color:var(--danger);font-size:12px;font-weight:700;cursor:pointer;padding:0 3px;}
+.add-size-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.add-size-row input{width:90px;padding:7px 9px;font-size:13px;}
+.add-size-row input.qty{width:65px;}
+
+.cart-line{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f0ead9;font-size:14px;}
+.cart-line:last-child{border-bottom:none;}
+.cart-line .nm{font-weight:600;color:var(--navy);}
+.cart-line .px{color:var(--muted);font-size:12.5px;}
+.cart-total{display:flex;justify-content:space-between;align-items:center;padding-top:14px;margin-top:6px;border-top:2px solid var(--navy);font-size:18px;font-weight:700;color:var(--navy);}
+.qty-btn{width:26px;height:26px;border-radius:6px;border:1px solid #ccc;background:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:700;}
+.pill.paid{background:#e7f1e9;color:var(--success);}
+.pill.deposit{background:#fbf0dd;color:var(--warn);}
+.pill.zero{background:#fbeae7;color:var(--danger);}
+
+.empty{text-align:center;padding:50px 20px;color:var(--muted);}
+.empty .ico{font-size:34px;margin-bottom:10px;color:var(--gold-light);}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+table th{text-align:left;padding:9px 8px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #eee2c9;}
+table td{padding:10px 8px;border-bottom:1px solid #f1ecd9;}
+table tr:hover td{background:#fcf9f0;}
+
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+.stat-box{background:var(--navy);color:#fff;border-radius:12px;padding:16px 18px;}
+.stat-box .lbl{font-size:11.5px;color:var(--gold-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.stat-box .val{font-size:24px;font-weight:700;font-family:'Playfair Display',serif;}
+.stat-box.alt{background:#fff;border:1.5px solid #e4ddca;color:var(--navy);}
+.stat-box.alt .lbl{color:var(--gold);}
+
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--navy);color:#fff;padding:12px 22px;border-radius:10px;font-size:14px;font-weight:500;opacity:0;transition:all .25s;z-index:200;display:flex;align-items:center;gap:10px;border:1px solid var(--gold);box-shadow:0 6px 20px rgba(0,0,0,.25);}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+.modal-bg{position:fixed;inset:0;background:rgba(10,14,22,.55);z-index:150;display:none;align-items:center;justify-content:center;padding:16px;}
+.modal-bg.show{display:flex;}
+.modal{background:#fff;border-radius:14px;padding:22px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;}
+.modal h3{font-size:18px;margin-bottom:14px;color:var(--navy);}
+
+.pin-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--navy);}
+.pin-box{background:#fff;border-radius:16px;padding:36px 30px;width:100%;max-width:320px;text-align:center;}
+.pin-box h2{color:var(--navy);margin-bottom:6px;}
+.pin-dots{display:flex;gap:10px;justify-content:center;margin:18px 0;}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--gold);}
+.pin-dot.filled{background:var(--gold);}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.pin-key{padding:16px;border-radius:10px;border:1.5px solid #e4ddca;background:#fffdf8;font-size:18px;font-weight:600;color:var(--navy);}
+.pin-key:active{background:var(--gold-light);}
+
+.search-box{position:relative;margin-bottom:16px;}
+.search-box input{padding-left:36px;}
+.search-box .ico{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);}
+.chart-wrap{position:relative;width:100%;height:220px;margin-top:10px;}
+.chart-wrap.tall{height:280px;}
+.date-nav{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+.date-nav input[type=date]{flex:1;min-width:140px;}
+.date-nav .lbl-date{font-size:13px;color:var(--muted);}
+.btn.green{background:#3e7d5a;border-color:#3e7d5a;color:#fff;}
+.btn.green:hover{background:#2f6247;}
+
+.small-muted{font-size:12.5px;color:var(--muted);}
+.flexbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+.deposit-row{border:1.5px solid #e4ddca;border-radius:10px;padding:14px;margin-bottom:12px;}
+.deposit-row.settled{opacity:.55;}
+.progress-bar{height:8px;background:#f1ecd9;border-radius:6px;overflow:hidden;margin:8px 0;}
+.progress-fill{height:100%;background:var(--gold);}
+/* ---- ROBA TEKOVNA ---- */
+.rt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:8px;}
+.rt-card{background:#fff;border:1.5px solid #e4ddca;border-radius:14px;overflow:hidden;}
+.rt-card-head{padding:14px 16px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0e9d6;}
+.rt-card-head .rt-name{font-weight:700;color:var(--navy);font-size:14px;flex:1;}
+.rt-card-head .rt-price{font-size:12px;color:var(--muted);}
+.rt-body{padding:10px 16px 14px;}
+.rt-series{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f0e6;flex-wrap:wrap;}
+.rt-series:last-child{border:none;}
+.rt-series .sname{font-size:12.5px;font-weight:600;color:var(--navy);min-width:100px;}
+.rt-sizes{display:flex;gap:4px;flex-wrap:wrap;flex:1;}
+.rt-sz{padding:3px 8px;border-radius:6px;font-size:12px;font-weight:600;}
+.rt-sz.ok{background:#e8f5e9;color:#2e7d32;}
+.rt-sz.zero{background:#f5f5f5;color:#bbb;text-decoration:line-through;}
+.series-badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;margin-left:auto;}
+.series-badge.green{background:#e8f5e9;color:#2e7d32;}
+.series-badge.yellow{background:#fff8e1;color:#f57f17;}
+.series-badge.red{background:#fdecea;color:#c62828;}
+.rt-chip-row{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;}
+.rt-chip{display:flex;flex-direction:column;align-items:center;padding:6px 10px;border-radius:8px;min-width:44px;}
+.rt-chip .ch-lbl{font-size:10px;font-weight:700;text-transform:uppercase;}
+.rt-chip .ch-qty{font-size:18px;font-weight:700;line-height:1.2;}
+.rt-chip.ok{background:#e8f5e9;color:#2e7d32;}
+.rt-chip.warn{background:#fff8e1;color:#f57f17;}
+.rt-chip.bad{background:#fdecea;color:#c62828;}
+.rt-chip.missing{background:#fdecea;color:#c62828;}
+.rt-chip.missing .ch-qty{font-size:13px;}
+.rt-sum-bar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+.rt-sum-box{background:#fff;border:1.5px solid #e4ddca;border-radius:10px;padding:10px 16px;flex:1;min-width:90px;text-align:center;}
+.rt-sum-box .sb-val{font-size:20px;font-weight:700;font-family:'Playfair Display',serif;color:var(--navy);}
+.rt-sum-box .sb-lbl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-top:2px;}
+/* ---- KASA REDESIGN ---- */
+.kasa-header{background:var(--navy);border-radius:16px;padding:28px 24px;color:#fff;margin-bottom:20px;position:relative;overflow:hidden;}
+.kasa-header::before{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;border-radius:50%;background:rgba(200,168,100,.10);}
+.kasa-header .kh-date{font-size:12px;color:var(--gold-light);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;}
+.kasa-header .kh-total{font-size:42px;font-weight:700;font-family:'Playfair Display',serif;color:#fff;margin-bottom:4px;}
+.kasa-header .kh-sub{font-size:13px;color:rgba(255,255,255,.55);}
+.kasa-breakdown{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;}
+.kasa-bd-item{background:rgba(255,255,255,.09);border-radius:10px;padding:10px 14px;flex:1;min-width:110px;cursor:pointer;transition:background .15s;border:1px solid rgba(255,255,255,.08);}
+.kasa-bd-item:hover{background:rgba(255,255,255,.16);}
+.kasa-bd-item .bdi-lbl{font-size:10.5px;color:var(--gold-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+.kasa-bd-item .bdi-val{font-size:20px;font-weight:700;color:#fff;font-family:'Playfair Display',serif;}
+.kasa-bd-item .bdi-sub{font-size:11px;color:rgba(255,255,255,.45);margin-top:2px;}
+.kasa-stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px;}
+.kstat{background:#fff;border:1.5px solid #e8e0c8;border-radius:12px;padding:14px 16px;}
+.kstat .ks-ico{font-size:22px;margin-bottom:6px;color:var(--gold);}
+.kstat .ks-val{font-size:22px;font-weight:700;color:var(--navy);font-family:'Playfair Display',serif;}
+.kstat .ks-lbl{font-size:11px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.4px;}
+.kstat.highlight{border-color:var(--gold);background:#fffdf5;}
+.breakdown-popup{background:var(--navy);border-radius:12px;padding:16px 18px;margin-bottom:20px;color:#fff;animation:fadeIn .2s;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.bdp-row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px;}
+.bdp-row:last-child{border:none;font-weight:700;font-size:15px;color:var(--gold-light);}
+.date-pill{display:inline-flex;align-items:center;gap:8px;background:#fff;border:1.5px solid #e4ddca;border-radius:24px;padding:6px 14px;font-size:13.5px;font-weight:600;color:var(--navy);}
+.sale-layout{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;}
+@media(max-width:720px){.sale-layout{grid-template-columns:1fr;}}
+.sale-catalog{}
+.sale-cat-tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px;}
+.sale-cat-tab{padding:7px 15px;border-radius:20px;border:1.5px solid #e4ddca;background:#fffdf8;color:var(--navy);font-weight:600;font-size:13px;cursor:pointer;transition:all .15s;}
+.sale-cat-tab:hover{border-color:var(--gold-light);}
+.sale-cat-tab.active{background:var(--navy);border-color:var(--navy);color:#fff;}
+.prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:10px;margin-bottom:14px;}
+.prod-card{background:#fff;border:1.5px solid #e4ddca;border-radius:12px;padding:14px 12px;cursor:pointer;transition:all .15s;position:relative;}
+.prod-card:hover{border-color:var(--gold);box-shadow:0 3px 12px rgba(0,0,0,.08);transform:translateY(-1px);}
+.prod-card.in-cart{border-color:var(--gold);background:#fffbf0;}
+.prod-card .pc-ico{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#fdf6e3,#f1e3bf);display:flex;align-items:center;justify-content:center;color:var(--gold);font-size:18px;margin-bottom:9px;}
+.prod-card .pc-name{font-weight:700;color:var(--navy);font-size:13.5px;line-height:1.3;margin-bottom:4px;}
+.prod-card .pc-price{font-size:12px;color:var(--muted);}
+.prod-card .pc-stock{font-size:11px;color:var(--muted);margin-top:3px;}
+.prod-card .pc-badge{position:absolute;top:8px;right:8px;background:var(--gold);color:#fff;border-radius:10px;font-size:11px;font-weight:700;padding:1px 7px;}
+.prod-card .pc-low{position:absolute;top:8px;right:8px;background:#fbeae7;color:var(--danger);border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;}
+.razno-inline{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.razno-inline input{flex:1;min-width:100px;}
+/* cart sticky */
+.cart-sticky{position:sticky;top:20px;}
+.cart-empty-state{text-align:center;padding:28px 10px;color:var(--muted);}
+.cart-empty-state .ico{font-size:32px;margin-bottom:8px;}
+/* picker modal */
+.picker-sizes{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+.sz-btn{padding:8px 14px;border-radius:8px;border:1.5px solid #e4ddca;background:#fffdf8;font-weight:600;font-size:13px;color:var(--navy);cursor:pointer;transition:all .12s;}
+.sz-btn:hover{border-color:var(--gold);}
+.sz-btn.selected{background:var(--navy);border-color:var(--navy);color:#fff;}
+.sz-btn:disabled{opacity:.4;cursor:not-allowed;}
+.qty-row{display:flex;align-items:center;gap:14px;margin:14px 0;}
+.qty-big-btn{width:36px;height:36px;border-radius:9px;border:1.5px solid #ccc;font-size:18px;font-weight:700;background:#fff;display:flex;align-items:center;justify-content:center;}
+.qty-big-val{font-size:22px;font-weight:700;color:var(--navy);min-width:28px;text-align:center;}
+.checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+.checkbox-row input{width:auto;}
+
+.acc-item{border:1.5px solid #e4ddca;border-radius:12px;margin-bottom:8px;overflow:hidden;background:#fff;transition:box-shadow .15s;}
+.acc-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.acc-item.open{border-color:var(--gold);}
+.acc-header{display:flex;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;user-select:none;}
+.acc-header:hover{background:#fffdf8;}
+.acc-arrow{font-size:11px;color:var(--muted);margin-left:auto;transition:transform .2s;}
+.acc-item.open .acc-arrow{transform:rotate(180deg);}
+.acc-ico{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--gold-light),var(--gold));display:flex;align-items:center;justify-content:center;font-size:17px;color:#fff;flex-shrink:0;}
+.acc-info{flex:1;min-width:0;}
+.acc-info .an{font-weight:700;color:var(--navy);font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.acc-info .as{font-size:12px;color:var(--muted);margin-top:2px;}
+.acc-pills{display:flex;gap:6px;flex-shrink:0;}
+.acc-body{padding:0 16px 16px;border-top:1.5px solid #f0e9d6;}
+.roba-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;padding-bottom:14px;border-bottom:1.5px solid #e8e1cc;}
+.roba-tab{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:24px;border:1.5px solid #e4ddca;background:#fffdf8;color:var(--navy);font-weight:600;font-size:13.5px;transition:all .15s;}
+.roba-tab:hover{border-color:var(--gold-light);}
+.roba-tab.active{background:var(--navy);border-color:var(--navy);color:#fff;}
+.roba-tab .cnt{background:rgba(0,0,0,.12);border-radius:10px;padding:1px 7px;font-size:11px;}
+.roba-tab.active .cnt{background:rgba(255,255,255,.18);}
+.type-card{transition:box-shadow .15s;}
+.type-card:hover{box-shadow:0 2px 10px rgba(20,20,10,.07);}
+.type-head{padding-bottom:12px;border-bottom:1px solid #eee5cf;margin-bottom:12px;}
+.type-head .tn-wrap{display:flex;align-items:center;gap:8px;}
+.type-icon{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--gold-light),var(--gold));display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+<div class="modal-bg" id="modalBg"><div class="modal" id="modalBody"></div></div>
+
+<script>
+/* ======================= STORAGE (SUPABASE) ======================= */
+const DB_KEY = 'pako_classic_db_v3';
+
+// === ВНЕСИ ГИ ТВОИТЕ SUPABASE ПОДАТОЦИ ТУКА ===
+const SUPABASE_URL = 'https://hphxqbtodqnflyitvkwx.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_eCtGEHYaJFaBAlOpA1Aytg_2QWxtlDM';
+// ================================================
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const ROW_ID = 'main'; // едно заедничко "складиште" за целата продавница
+
+function seedTypes(){
+  // Type = { id, name, price, category, sized, directSizes:{}, subtypes:[{id,name,sizes:{}}] }
+  return [
+    {id:'t-odelo-8500', name:'Одело', price:8500, category:'Одела', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-odelo-10500', name:'Одело', price:10500, category:'Одела', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-odelo-13500', name:'Одело', price:13500, category:'Одела', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-kosula-2200', name:'Кошула', price:2200, category:'Кошули', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-konduri-3500', name:'Кондури', price:3500, category:'Обувки', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-konduri-3200', name:'Кондури', price:3200, category:'Обувки', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-patiki-3500', name:'Патики', price:3500, category:'Обувки', sized:true, directSizes:{}, subtypes:[]},
+    {id:'t-kravata', name:'Кравата / Лептир', price:700, category:'Додатоци', sized:false, qty:0},
+    {id:'t-kutija', name:'Кутија кравата', price:1200, category:'Додатоци', sized:false, qty:0},
+    {id:'t-maramce', name:'Марамче', price:300, category:'Додатоци', sized:false, qty:0},
+    {id:'t-kais', name:'Каиш', price:1000, category:'Додатоци', sized:false, qty:0},
+    {id:'t-korekcija-300', name:'Корекција', price:300, category:'Услуги', sized:false, noStock:true},
+    {id:'t-korekcija-500', name:'Корекција', price:500, category:'Услуги', sized:false, noStock:true},
+  ];
+}
+function defaultDB(){
+  return { sales:[], customers:[], deposits:[], types: seedTypes(), pin:'0808' };
+}
+let DB = defaultDB();
+
+async function loadDB(){
+  try{
+    const { data, error } = await sb.from('pako_store').select('data').eq('id', ROW_ID).maybeSingle();
+    if(error) throw error;
+    if(data && data.data){ DB = data.data; }
+    else { DB = defaultDB(); await saveDB(); } // прв пат - креирај го редот
+  }catch(e){ console.error('Грешка при вчитување', e); DB = defaultDB(); }
+  if(!DB.types) DB.types = seedTypes();
+  DB.types.forEach(t=>{
+    if(t.sized){ if(!t.directSizes) t.directSizes={}; if(!t.subtypes) t.subtypes=[]; }
+    else if(!t.noStock && t.qty===undefined){ t.qty=0; }
+  });
+  if(!DB.pin) DB.pin='0808';
+  if(!DB.customers) DB.customers=[];
+  if(!DB.deposits) DB.deposits=[];
+  if(!DB.sales) DB.sales=[];
+}
+async function saveDB(){
+  try{
+    const { error } = await sb.from('pako_store').upsert({ id: ROW_ID, data: DB, updated_at: new Date().toISOString() });
+    if(error) throw error;
+  }catch(e){ console.error('Грешка при чување', e); toast('Не успеа зачувување – провери интернет.','err'); }
+}
+
+// Синхронизација во реално време меѓу телефони
+function subscribeRealtime(){
+  sb.channel('pako_store_changes')
+    .on('postgres_changes', { event:'UPDATE', schema:'public', table:'pako_store', filter:`id=eq.${ROW_ID}` }, (payload)=>{
+      if(payload.new && payload.new.data){
+        DB = payload.new.data;
+        render();
+      }
+    })
+    .subscribe();
+}
+
+/* ======================= HELPERS ======================= */
+function fmt(n){ return Number(n||0).toLocaleString('en-US').replace(/,/g,'.') + ' ден'; }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function monthStr(){ return new Date().toISOString().slice(0,7); }
+function yearStr(){ return new Date().getFullYear().toString(); }
+function getType(id){ return DB.types.find(t=>t.id===id); }
+function getSubtype(typeId, subId){ const t=getType(typeId); return t ? t.subtypes.find(s=>s.id===subId) : null; }
+function sizesSum(sizesObj){ return Object.values(sizesObj||{}).reduce((s,n)=>s+(n||0),0); }
+function typeTotalStock(t){
+  if(!t.sized) return t.noStock ? null : (t.qty||0);
+  let total = sizesSum(t.directSizes);
+  (t.subtypes||[]).forEach(s=>total+=sizesSum(s.sizes));
+  return total;
+}
+function categories(){ return [...new Set(DB.types.map(t=>t.category))]; }
+function isOdeloType(t){ return t.category==='Одела'; }
+function isKosulaType(t){ return t.category==='Кошули'; }
+function isKondurType(t){ return t.category==='Кондури'||t.category==='Патики'; }
+
+/* ======================= STATE ======================= */
+let authUser = null;
+let authState = { email:'', password:'', loading:false, error:'' };
+
+function renderLoginScreen(){
+  return `<div class="pin-screen">
+    <div class="pin-box" style="width:100%;max-width:320px;background:#fff;border-radius:16px;padding:28px 24px;">
+      <h3 style="text-align:center;margin-bottom:18px;color:var(--navy);font-family:'Playfair Display',serif;">Pako Classic — Најава</h3>
+      <div class="field">
+        <label class="fl">Е-маил</label>
+        <input type="text" id="loginEmail" value="${authState.email}" placeholder="email@primer.com" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+      </div>
+      <div class="field">
+        <label class="fl">Лозинка</label>
+        <input type="password" id="loginPass" value="${authState.password}" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      ${authState.error ? `<div style="color:var(--danger);font-size:13px;margin-bottom:12px;">${authState.error}</div>` : ''}
+      <button class="btn block gold" ${authState.loading?'disabled':''} onclick="doLogin()">${authState.loading?'Се најавува...':'Најави се'}</button>
+    </div>
+  </div>`;
+}
+
+async function doLogin(){
+  authState.email = document.getElementById('loginEmail').value.trim();
+  authState.password = document.getElementById('loginPass').value;
+  if(!authState.email || !authState.password){ authState.error='Внеси е-маил и лозинка.'; renderAuthScreen(); return; }
+  authState.loading = true; authState.error=''; renderAuthScreen();
+  const { data, error } = await sb.auth.signInWithPassword({ email: authState.email, password: authState.password });
+  authState.loading = false;
+  if(error){ authState.error = 'Погрешен е-маил или лозинка.'; renderAuthScreen(); return; }
+  authUser = data.user;
+  await loadDB(); render(); subscribeRealtime();
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  authUser = null; state.ownerUnlocked = false; state.pinEntry='';
+  renderAuthScreen();
+}
+
+function renderAuthScreen(){
+  const root = document.getElementById('root');
+  root.innerHTML = renderLoginScreen();
+}
+
+/* ======================= APP STATE ======================= */
+let state = {
+  view:'sale', sidebarOpen:false, cart:[],
+  customerName:'', customerPhone:'', customerComment:'', noContact:false, paymentType:'paid', depositAmount:'', discountAmount:'', saleDate: todayStr(),
+  ownerUnlocked:false, pinEntry:'', custSearch:'',
+  kasaDate: todayStr(), kasaBreakdown: false, robaCat:null, robaTekCat:null, robaTekFilter:'all', robaOpen: new Set(), robaSearch:'', saleSearch:'', saleCat:null,
+  picker:null, /* {typeId, subId, subSearch, size, qty} */
+  saleSelect:{} // typeId -> {subId, size, qty}
+};
+function ensureSaleSelect(typeId){ if(!state.saleSelect[typeId]) state.saleSelect[typeId]={subId:'',size:'',qty:1}; return state.saleSelect[typeId]; }
+
+function toast(msg, type){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.borderColor = type==='err' ? 'var(--danger)' : 'var(--gold)';
+  t.classList.add('show'); clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2400);
+}
+
+const NAV = [
+  {id:'sale', label:'Внес на продажба', ico:'&#128176;'},
+  {id:'kasa', label:'Тековна каса', ico:'&#128176;'},
+  {id:'roba-vnes', label:'Внес на роба', ico:'&#128230;'},
+  {id:'roba-tekovna', label:'Тековна роба', ico:'&#128722;'},
+  {id:'customers', label:'Муштерии', ico:'&#128100;'},
+  {id:'deposits', label:'Отворени капари', ico:'&#128273;'},
+  {id:'owner', label:'Извештај (сопственик)', ico:'&#128274;'},
+];
+function setView(v){ state.view=v; state.sidebarOpen=false; render(); window.scrollTo(0,0); }
+function toggleSidebar(){ state.sidebarOpen=!state.sidebarOpen; render(); }
+
+/* ======================= CART ======================= */
+function addSimpleToCart(typeId){
+  const t = getType(typeId);
+  const existing = state.cart.find(c=>c.typeId===typeId && !c.subId && !c.size);
+  if(existing){ existing.qty++; }
+  else{ state.cart.push({typeId, subId:null, size:null, name:t.name+' ('+fmt(t.price).replace(' ден','')+')', price:t.price, qty:1}); }
+  render();
+}
+function decSimpleCart(typeId){
+  const idx = state.cart.findIndex(c=>c.typeId===typeId && !c.subId && !c.size);
+  if(idx>-1) changeQty(idx,-1);
+}
+function addVariantToCart(typeId){
+  const t = getType(typeId);
+  const sel = ensureSaleSelect(typeId);
+  let sizesPool, label;
+  if(t.subtypes.length>0){
+    const sub = getSubtype(typeId, sel.subId);
+    if(!sub){ toast('Изберете подтип.','err'); return; }
+    sizesPool = sub.sizes; label = t.name+' — '+sub.name;
+  } else {
+    sizesPool = t.directSizes; label = t.name;
+  }
+  if(!sel.size){ toast('Изберете број/големина.','err'); return; }
+  const qty = parseInt(sel.qty)||1;
+  const stock = sizesPool[sel.size]||0;
+  if(stock<qty){ toast('Нема доволна залога ('+stock+' на залога).','err'); return; }
+  const existing = state.cart.find(c=>c.typeId===typeId && c.subId===(sel.subId||null) && c.size===sel.size);
+  if(existing){ existing.qty+=qty; }
+  else{
+    state.cart.push({typeId, subId: t.subtypes.length>0?sel.subId:null, size:sel.size, qty, name: label+' ('+sel.size+')', price:t.price});
+  }
+  sel.size=''; sel.qty=1;
+  render();
+}
+function changeQty(idx, delta){
+  state.cart[idx].qty += delta;
+  if(state.cart[idx].qty<=0) state.cart.splice(idx,1);
+  render();
+}
+function cartHasOdelo(){ return state.cart.some(c=>{ const t=getType(c.typeId); return t && isOdeloType(t); }); }
+function cartTotal(){ return state.cart.reduce((s,c)=>s+c.price*c.qty,0); }
+function finalTotal(){ const t = cartTotal() - (parseFloat(state.discountAmount)||0); return t>0?t:0; }
+function resetSaleForm(){ state.cart=[]; state.customerName=''; state.customerPhone=''; state.customerComment=''; state.noContact=false; state.paymentType='paid'; state.depositAmount=''; state.discountAmount=''; state.saleDate=todayStr(); }
+
+async function submitSale(){
+  if(state.cart.length===0){ toast('Изберете најмалку еден производ.','err'); return; }
+  if(cartHasOdelo() && !state.noContact && (!state.customerName.trim() || !state.customerPhone.trim())){
+    toast('Внесете име и телефон на муштерија (има одело во продажбата).','err'); return;
+  }
+  const rawTotal = cartTotal();
+  const discount = Math.min(parseFloat(state.discountAmount)||0, rawTotal);
+  const total = rawTotal - discount;
+  let paidNow = total, depositRemaining = 0;
+  if(state.paymentType==='deposit'){
+    const dep = parseFloat(state.depositAmount);
+    if(!dep || dep<=0 || dep>=total){ toast('Внесете валиден капар (помал од вкупната сума).','err'); return; }
+    paidNow = dep; depositRemaining = total - dep;
+  }
+  for(const c of state.cart){
+    if(c.size){
+      const t = getType(c.typeId);
+      const pool = c.subId ? getSubtype(c.typeId,c.subId).sizes : t.directSizes;
+      if((pool[c.size]||0) < c.qty){ toast('Залогата за '+c.name+' е недостапна.','err'); return; }
+    }
+  }
+  const sale = {
+    id:'S'+Date.now(), date: state.saleDate+'T'+ new Date().toTimeString().slice(0,8), items:JSON.parse(JSON.stringify(state.cart)),
+    total, rawTotal, discount, customerName:state.customerName.trim(), customerPhone:state.customerPhone.trim(), customerComment:state.customerComment.trim(),
+    paymentType:state.paymentType, paidNow, depositRemaining
+  };
+  DB.sales.push(sale);
+  state.cart.forEach(c=>{
+    const t = getType(c.typeId);
+    if(c.size){
+      const pool = c.subId ? getSubtype(c.typeId,c.subId).sizes : t.directSizes;
+      pool[c.size] = Math.max(0,(pool[c.size]||0)-c.qty);
+    } else if(t && !t.noStock){
+      t.qty = Math.max(0,(t.qty||0)-c.qty);
+    }
+  });
+  if(sale.customerName){
+    let cust = DB.customers.find(c=>c.phone===sale.customerPhone && sale.customerPhone);
+  if(!state.noContact){
+    if(!cust && sale.customerPhone){ cust = {id:'C'+Date.now(), name:sale.customerName, phone:sale.customerPhone, purchases:0, comment:sale.customerComment||''}; DB.customers.push(cust); }
+    if(cust){ cust.purchases++; cust.name = sale.customerName; if(sale.customerComment) cust.comment = sale.customerComment; sale.customerId = cust.id; }
+  }
+  }
+  if(state.paymentType==='deposit'){
+    DB.deposits.push({
+      id:'D'+Date.now(), saleId:sale.id, customerName:sale.customerName||'(без име)', customerPhone:sale.customerPhone,
+      total, paid:paidNow, settled:false, history:[{date:new Date().toISOString(), amount:paidNow, note:'Капар при продажба'}]
+    });
+  }
+  await saveDB();
+  toast('Продажбата е внесена успешно.');
+  resetSaleForm();
+  render();
+}
+
+/* ======================= KASA ======================= */
+function todaysCash(){
+  const t=todayStr(); let sum=0;
+  DB.sales.forEach(s=>{ if(s.date.slice(0,10)===t) sum+=s.paidNow; });
+  DB.deposits.forEach(d=>d.history.forEach(h=>{ if(h.date.slice(0,10)===t && h.note!=='Капар при продажба') sum+=h.amount; }));
+  return sum;
+}
+function todaysSalesList(){ const t=todayStr(); return DB.sales.filter(s=>s.date.slice(0,10)===t).sort((a,b)=>b.date.localeCompare(a.date)); }
+
+/* ======================= DEPOSITS ======================= */
+function openDeposit(dep){
+  const remaining = dep.total-dep.paid;
+  showModal(`
+    <h3>Доплата — ${dep.customerName}</h3>
+    <p class="small-muted" style="margin-bottom:14px;">Вкупно: <b>${fmt(dep.total)}</b> &middot; Платено: <b>${fmt(dep.paid)}</b> &middot; Остаток: <b style="color:var(--danger)">${fmt(remaining)}</b></p>
+    <div class="field"><label class="fl">Износ на доплата</label><input type="number" id="depPayAmt" value="${remaining}"></div>
+    <div class="field"><label class="fl">Коментар (по потреба, ако сумата е помала)</label><textarea id="depPayNote" rows="2" placeholder="нпр. договорено да доплати остаток подоцна"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:8px;">
+      <button class="btn outline block" onclick="closeModal()">Откажи</button>
+      <button class="btn gold block" onclick="confirmDepositPay('${dep.id}')">Потврди уплата</button>
+    </div>`);
+}
+async function confirmDepositPay(depId){
+  const dep = DB.deposits.find(d=>d.id===depId);
+  const amt = parseFloat(document.getElementById('depPayAmt').value);
+  const note = document.getElementById('depPayNote').value.trim();
+  if(!amt || amt<=0){ toast('Внесете валиден износ.','err'); return; }
+  dep.paid += amt;
+  const who = (authUser && authUser.email) ? authUser.email.split('@')[0] : 'непознат';
+  dep.history.push({date:new Date().toISOString(), amount:amt, note: note || (dep.paid>=dep.total ? 'Целосна доплата' : 'Делумна доплата'), by: who});
+  if(dep.paid >= dep.total) dep.settled = true;
+  await saveDB(); closeModal();
+  toast(dep.settled ? 'Капарот е целосно исплатен.' : 'Доплатата е внесена.');
+  render();
+}
+
+/* ======================= MODAL ======================= */
+function showModal(html){ document.getElementById('modalBody').innerHTML = html; document.getElementById('modalBg').classList.add('show'); }
+function closeModal(){ document.getElementById('modalBg').classList.remove('show'); }
+
+/* ======================= TYPE MANAGEMENT ======================= */
+function openNewTypeModal(){
+  const cats = categories();
+  showModal(`
+    <h3>Нов тип на производ</h3>
+    <div class="field"><label class="fl">Име на типот (нпр. Одело, Кондури...)</label><input type="text" id="ntName" placeholder="нпр. Одело"></div>
+    <div class="field"><label class="fl">Цена (ден)</label><input type="number" id="ntPrice" placeholder="нпр. 9500"></div>
+    <div class="field">
+      <label class="fl">Категорија</label>
+      <input type="text" id="ntCategory" list="catList" placeholder="нпр. Одела">
+      <datalist id="catList">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>
+    </div>
+    <div class="checkbox-row"><input type="checkbox" id="ntSized" checked><label for="ntSized" style="font-size:14px;">Има бројки / големини (подтипови)</label></div>
+    <button class="btn gold block" onclick="saveNewType()">Сними тип</button>
+  `);
+}
+async function saveNewType(){
+  const name = document.getElementById('ntName').value.trim();
+  const price = parseFloat(document.getElementById('ntPrice').value);
+  const category = document.getElementById('ntCategory').value.trim() || 'Останато';
+  const sized = document.getElementById('ntSized').checked;
+  if(!name){ toast('Внесете име на типот.','err'); return; }
+  if(!price || price<=0){ toast('Внесете валидна цена.','err'); return; }
+  const newType = {id:'t'+Date.now(), name, price, category};
+  if(sized){ newType.sized=true; newType.directSizes={}; newType.subtypes=[]; }
+  else{ newType.sized=false; newType.qty=0; }
+  DB.types.push(newType);
+  state.robaCat = category;
+  await saveDB(); closeModal(); toast('Новиот тип е зачуван.'); render();
+}
+async function deleteType(typeId){
+  if(!confirm('Дали сигурно сакаш да го избришеш овој тип?')) return;
+  DB.types = DB.types.filter(t=>t.id!==typeId);
+  await saveDB(); toast('Типот е избришан.'); render();
+}
+async function updateTypePrice(typeId, val){
+  const t = getType(typeId); t.price = parseFloat(val)||t.price; await saveDB(); toast('Цената е зачувана.');
+}
+async function updateTypeName(typeId, val){
+  const t = getType(typeId); t.name = val.trim()||t.name; await saveDB();
+}
+
+/* subtype management */
+function openNewSubtypeModal(typeId){
+  showModal(`
+    <h3>Нов подтип</h3>
+    <div class="field"><label class="fl">Име на подтипот (нпр. црно листер, сино...)</label><input type="text" id="nsName" placeholder="внеси име"></div>
+    <button class="btn gold block" onclick="saveNewSubtype('${typeId}')">Сними подтип</button>
+  `);
+}
+async function saveNewSubtype(typeId){
+  const name = document.getElementById('nsName').value.trim();
+  if(!name){ toast('Внесете име.','err'); return; }
+  getType(typeId).subtypes.push({id:'sub'+Date.now(), name, sizes:{}});
+  await saveDB(); closeModal(); toast('Подтипот е зачуван.'); render();
+}
+async function deleteSubtype(typeId, subId){
+  const t = getType(typeId); t.subtypes = t.subtypes.filter(s=>s.id!==subId);
+  await saveDB(); toast('Подтипот е избришан.'); render();
+}
+
+/* sizes management — works for either direct (subId=null) or subtype sizes */
+function sizesPoolFor(typeId, subId){
+  const t = getType(typeId);
+  return subId ? getSubtype(typeId, subId).sizes : t.directSizes;
+}
+async function addSizeRow(typeId, subId){
+  const base = subId ? 'sz-'+typeId+'-'+subId : 'sz-'+typeId+'-direct';
+  const label = document.getElementById(base+'-label').value.trim();
+  const qty = parseInt(document.getElementById(base+'-qty').value)||0;
+  if(!label){ toast('Внесете број/големина.','err'); return; }
+  const pool = sizesPoolFor(typeId, subId);
+  if(pool[label]!==undefined){ toast('Веќе постои.','err'); return; }
+  pool[label]=qty;
+  await saveDB(); render();
+}
+async function updateSizeQty(typeId, subId, label, val){
+  const pool = sizesPoolFor(typeId, subId);
+  pool[label] = Math.max(0, parseInt(val)||0);
+  await saveDB();
+}
+async function removeSize(typeId, subId, label){
+  const pool = sizesPoolFor(typeId, subId);
+  delete pool[label];
+  await saveDB(); render();
+}
+async function adjustSimpleQty(typeId, delta){
+  const t = getType(typeId); t.qty = Math.max(0,(t.qty||0)+delta);
+  await saveDB(); render();
+}
+async function setSimpleQty(typeId, val){
+  const t = getType(typeId); t.qty = Math.max(0, parseInt(val)||0);
+  await saveDB(); render();
+}
+
+/* ======================= OWNER STATS ======================= */
+function computeStats(){
+  const y=yearStr(), m=monthStr();
+  let yearRev=0, monthRev=0, suitsSold=0;
+  const typeCounts={}, detailCounts={};
+  const revenueByDate={}; // date -> revenue
+  const revenueByMonth={}; // YYYY-MM -> revenue (this year)
+  const subtypeSalesByType={}; // typeId -> { typeLabel, data: {subName: qty} }
+  const catBest={};
+
+  // Customer new vs returning for selected month
+  // A customer is "new" for month M if their first purchase is in M
+  // "returning" if they had any purchase before M
+  const custFirstSale = {}; // custId -> earliest sale date
+  const custSalesInMonth = new Set();
+  const custNewInMonth = new Set();
+  const custReturningInMonth = new Set();
+
+  // Sort sales by date to determine first purchase
+  const sortedSales = [...DB.sales].sort((a,b)=>a.date.localeCompare(b.date));
+  sortedSales.forEach(s=>{
+    if(s.customerId){
+      if(!custFirstSale[s.customerId]) custFirstSale[s.customerId] = s.date.slice(0,7);
+    }
+  });
+
+  DB.sales.forEach(s=>{
+    const sMonth = s.date.slice(0,7);
+    const sYear = s.date.slice(0,4);
+    if(sYear===y) yearRev+=s.total;
+    if(sMonth===m) monthRev+=s.total;
+    const d = s.date.slice(0,10);
+    revenueByDate[d] = (revenueByDate[d]||0)+s.total;
+    if(sYear===y) revenueByMonth[sMonth] = (revenueByMonth[sMonth]||0)+s.total;
+
+    // Customer tracking for current month
+    if(sMonth===m && s.customerId){
+      custSalesInMonth.add(s.customerId);
+      if(custFirstSale[s.customerId]===m) custNewInMonth.add(s.customerId);
+      else custReturningInMonth.add(s.customerId);
+    }
+
+    s.items.forEach(it=>{
+      const t = getType(it.typeId);
+      const tname = t ? (t.name+' '+t.price) : it.name;
+      typeCounts[tname]=(typeCounts[tname]||0)+it.qty;
+      if(t && isOdeloType(t)) suitsSold+=it.qty;
+      detailCounts[it.name]=(detailCounts[it.name]||0)+it.qty;
+
+      if(t && t.sized){
+        if(!subtypeSalesByType[t.id]) subtypeSalesByType[t.id] = {typeLabel: t.name+' '+fmt(t.price).replace(' ден',''), data:{}};
+        let subLabel;
+        if(it.subId){ const sub = getSubtype(t.id, it.subId); subLabel = (sub?sub.name:'—'); }
+        else { subLabel = it.size || '—'; }
+        subtypeSalesByType[t.id].data[subLabel] = (subtypeSalesByType[t.id].data[subLabel]||0)+it.qty;
+      }
+      if(t){
+        if(!catBest[t.category]) catBest[t.category]={};
+        const lbl = t.name+' '+t.price;
+        catBest[t.category][lbl] = (catBest[t.category][lbl]||0)+it.qty;
+      }
+    });
+  });
+
+  const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const topDetail = Object.entries(detailCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const returning = DB.customers.filter(c=>c.purchases>1).length;
+
+  let bestDay=null, bestDayRev=0;
+  Object.entries(revenueByDate).forEach(([d,r])=>{ if(r>bestDayRev){bestDayRev=r;bestDay=d;} });
+
+  const bestPerCategory = {};
+  Object.entries(catBest).forEach(([cat,counts])=>{
+    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    bestPerCategory[cat] = sorted[0] || null;
+  });
+
+  // current month days array — revenue
+  const daysInMonth = new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7)), 0).getDate();
+  const monthDayLabels = []; const monthDayData = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = m + '-' + String(d).padStart(2,'0');
+    monthDayLabels.push(String(d));
+    monthDayData.push(revenueByDate[ds]||0);
+  }
+  // year months array — revenue
+  const monthNames = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
+  const yearMonthLabels = monthNames;
+  const yearMonthData = monthNames.map((_,i)=>{
+    const mm = y+'-'+String(i+1).padStart(2,'0');
+    return revenueByMonth[mm]||0;
+  });
+
+  return {yearRev, monthRev, suitsSold, returning, topTypes, topDetail,
+    bestDay, bestDayRev, bestPerCategory, subtypeSalesByType,
+    monthDayLabels, monthDayData, yearMonthLabels, yearMonthData,
+    custTotal: custSalesInMonth.size, custNew: custNewInMonth.size, custReturning: custReturningInMonth.size};
+}
+
+/* ======================= RENDER ======================= */
+function render(){
+  const root = document.getElementById('root');
+  if(state.view==='owner' && !state.ownerUnlocked){ root.innerHTML = renderPinScreen(); return; }
+  const active = document.activeElement;
+  const activeId = active && active.id ? active.id : null;
+  const selStart = (activeId && active.selectionStart!==undefined) ? active.selectionStart : null;
+  root.innerHTML = `
+    <div id="app">
+      ${renderSidebar()}
+      <div class="overlay ${state.sidebarOpen?'show':''}" onclick="toggleSidebar()"></div>
+      <main>${renderTopbar()}<div class="view">${renderView()}</div></main>
+    </div>
+    <div class="modal-bg ${state.picker?'show':''}" onclick="if(event.target.classList.contains('modal-bg'))closePicker()">
+      <div class="modal">${state.picker?renderPickerModal():''}</div>
+    </div>`;
+  if(activeId){
+    const el = document.getElementById(activeId);
+    if(el){ el.focus(); if(selStart!==null && el.setSelectionRange){ try{ el.setSelectionRange(selStart, selStart); }catch(e){} } }
+  }
+}
+function renderTopbar(){
+  const navItem = NAV.find(n=>n.id===state.view);
+  return `<div class="topbar">
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="Мени"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+    <div class="brand"><span class="name">Pako Classic</span><span class="tag">${navItem?navItem.label:''}</span></div>
+    <div class="topbar-right">${new Date().toLocaleDateString('mk-MK',{weekday:'short',day:'numeric',month:'short'})}</div>
+  </div>`;
+}
+function renderSidebar(){
+  return `<nav class="sidebar ${state.sidebarOpen?'open':''}">
+    <div class="sidebar-head"><div class="name">Pako Classic</div><div class="tag">Машка елеганција</div></div>
+    <ul class="nav-list">${NAV.map(n=>`<li class="nav-item ${state.view===n.id?'active':''}" onclick="setView('${n.id}')"><span class="ico">${n.ico}</span>${n.label}</li>`).join('')}</ul>
+    <div class="sidebar-foot">Внатрешен систем за продажба &middot; v3.0<br><a href="#" onclick="doLogout();return false;" style="color:var(--gold-light);">Одјави се</a></div>
+  </nav>`;
+}
+function renderView(){
+  switch(state.view){
+    case 'sale': return renderSaleView();
+    case 'kasa': return renderKasaView();
+    case 'roba-vnes': return renderRobaVnesView();
+    case 'roba-tekovna': return renderRobaTekovnaView();
+    case 'customers': return renderCustomersView();
+    case 'deposits': return renderDepositsView();
+    case 'owner': return renderOwnerView();
+    default: return '';
+  }
+}
+
+/* ---------- SALE VIEW ---------- */
+function svgIco(paths){
+  return `<svg viewBox="0 0 24 24" width="1em" height="1em" style="vertical-align:-3px;display:inline-block" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
+const ICO = {
+  suit: '<path d="M8 3.5 12 6l4-2.5"/><path d="M8 3.5 5.3 6A2 2 0 0 0 4.5 7.6V20a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V7.6A2 2 0 0 0 18.7 6L16 3.5"/><path d="M9 8.5l3 4.5 3-4.5"/><line x1="12" y1="13" x2="12" y2="20.5"/>',
+  shirt: '<path d="M8 4 10 6 12 4.6 14 6 16 4 20 8 17.3 10.5 17.3 20 6.7 20 6.7 10.5 4 8Z"/>',
+  shoe: '<path d="M3.2 18.3c0-1 .6-1.9 1.6-2.2l3.8-1.2 2.9-3.3c.5-.6 1.3-1 2.1-1H17c1 0 1.9.6 2.3 1.5l.6 1.4c.2.6.8 1 1.4 1H21a1 1 0 0 1 1 1v2.6c0 1.1-.9 2-2 2H5c-1 0-1.8-.8-1.8-1.8Z"/><line x1="3.5" y1="15.5" x2="20.5" y2="15.5"/>',
+  accessory: '<path d="M3.5 7.2v9.6l6.5-4.8Z"/><path d="M20.5 7.2v9.6L14 12Z"/><rect x="9.7" y="9.7" width="4.6" height="4.6" rx="1"/>',
+  service: '<line x1="6" y1="4" x2="6" y2="20"/><circle cx="6" cy="9" r="2"/><line x1="12" y1="4" x2="12" y2="20"/><circle cx="12" cy="15" r="2"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="18" cy="7" r="2"/>',
+  bag: '<path d="M6.5 8h11l1 12h-13Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+  layers: '<path d="M12 3 3 8l9 5 9-5Z"/><path d="M3 12l9 5 9-5"/><path d="M3 16l9 5 9-5"/>'
+};
+function catIcon(c){
+  const l=(c||'').toLowerCase();
+  if(l.includes('одел')) return svgIco(ICO.suit);
+  if(l.includes('кошул')) return svgIco(ICO.shirt);
+  if(l.includes('обувк')||l.includes('кондур')||l.includes('патик')) return svgIco(ICO.shoe);
+  if(l.includes('додат')||l.includes('каиш')||l.includes('крават')) return svgIco(ICO.accessory);
+  if(l.includes('услуг')) return svgIco(ICO.service);
+  return svgIco(ICO.bag);
+}
+function typeIcon(t){
+  if(t.noStock) return '&#9881;';
+  return catIcon(t.category);
+}
+function renderSaleView(){
+  const q = (state.saleSearch||'').toLowerCase().trim();
+  const cats = [...new Set(DB.types.map(t=>t.category))];
+  if(!state.saleCat || !cats.includes(state.saleCat)) state.saleCat = cats[0]||null;
+
+  // filter types
+  let visible = DB.types.filter(t=>{
+    if(q) return t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q);
+    return t.category === state.saleCat;
+  });
+
+  const tabsHtml = `<div class="sale-cat-tabs">
+    ${cats.map(c=>`<button class="sale-cat-tab ${!q && state.saleCat===c?'active':''}" onclick="state.saleCat='${c}';state.saleSearch='';render()">${catIcon(c)} ${c}</button>`).join('')}
+  </div>`;
+
+  const prodGrid = visible.length===0
+    ? `<div class="small-muted" style="padding:20px 0;">Нема пронајдени производи.</div>`
+    : `<div class="prod-grid">${visible.map(t=>{
+        const inCart = state.cart.filter(c=>c.typeId===t.id).reduce((s,c)=>s+c.qty,0);
+        const stock = t.sized ? typeTotalStock(t) : (t.noStock ? null : (t.qty||0));
+        const low = stock!==null && stock<=3;
+        return `<div class="prod-card ${inCart>0?'in-cart':''}" onclick="openPicker('${t.id}')">
+          ${inCart>0 ? `<div class="pc-badge">${inCart}</div>` : (low ? `<div class="pc-low">мало</div>` : '')}
+          <div class="pc-ico">${typeIcon(t)}</div>
+          <div class="pc-name">${t.name}</div>
+          <div class="pc-price">${fmt(t.price)}</div>
+          ${stock!==null ? `<div class="pc-stock">залога: ${stock}</div>` : ''}
+        </div>`;
+      }).join('')}</div>`;
+
+  // CART PANEL
+  const total = cartTotal();
+  const cartPanel = `
+    <div class="cart-sticky">
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:12px;">🛒 Кошничка</div>
+        ${state.cart.length===0 ? `<div class="cart-empty-state"><div class="ico">🛍️</div><div>Кошничката е празна.<br><span class="small-muted">Кликни на производ за да додадеш.</span></div></div>` :
+          state.cart.map((c,i)=>`
+            <div class="cart-line">
+              <div><div class="nm">${c.name}</div><div class="px">${fmt(c.price)} × ${c.qty}</div></div>
+              <div style="display:flex;align-items:center;gap:6px;"><b style="min-width:52px;text-align:right;">${fmt(c.price*c.qty)}</b>
+                <button class="qty-btn" onclick="changeQty(${i},-1)">−</button>
+                <button class="qty-btn" onclick="changeQty(${i},1)">+</button>
+              </div>
+            </div>`).join('')}
+        ${state.cart.length>0 ? `
+          <div class="cart-total"><span>Меѓусума</span><span>${fmt(total)}</span></div>
+          <div class="field" style="margin-top:10px;"><label class="fl">Попуст (ден)</label><input type="number" id="discountInput" value="${state.discountAmount||''}" placeholder="0" onblur="state.discountAmount=this.value;render()"></div>
+          <div class="cart-total" style="font-size:15px;"><span>Вкупно</span><span>${fmt(finalTotal())}</span></div>
+        ` : ''}
+      </div>
+      ${state.cart.length>0 ? `
+      ${cartHasOdelo() ? `<div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:10px;">👤 Муштерија</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+          <input type="checkbox" ${state.noContact?'checked':''} onchange="state.noContact=this.checked;render()">
+          <span style="font-size:13.5px;color:var(--navy);">Не остави контакт</span>
+        </label>
+        ${!state.noContact ? `
+        <div class="field"><label class="fl">Име и презиме</label><input type="text" value="${state.customerName}" oninput="state.customerName=this.value"></div>
+        <div class="field"><label class="fl">Телефон</label><input type="tel" value="${state.customerPhone}" oninput="state.customerPhone=this.value"></div>
+        <div class="field"><label class="fl">Коментар <span class="small-muted">(опционално)</span></label><input type="text" value="${state.customerComment||''}" placeholder="нпр. мери 52, посебни желби..." oninput="state.customerComment=this.value"></div>
+        ` : `<div class="small-muted" style="padding:4px 0;">Продажбата ќе се евидентира без муштерија во базата.</div>`}
+      </div>` : ''}
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:10px;">💳 Плаќање</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button class="btn ${state.paymentType==='paid'?'gold':'outline'} sm" style="flex:1;" onclick="setPaymentType('paid')">Платено</button>
+          <button class="btn ${state.paymentType==='deposit'?'gold':'outline'} sm" style="flex:1;" onclick="setPaymentType('deposit')">Капар</button>
+        </div>
+        ${state.paymentType==='deposit' ? `
+          <div class="field"><label class="fl">Капар (ден)</label><input type="number" id="depositInput" value="${state.depositAmount||''}" placeholder="0" onblur="state.depositAmount=this.value;render()"></div>
+          ${state.depositAmount && finalTotal()>0 ? `<div class="small-muted">Остаток: <b>${fmt(finalTotal()-parseFloat(state.depositAmount||0))}</b></div>` : ''}` : ''}
+      </div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="card-title" style="margin-bottom:10px;">📅 Датум на продажба</div>
+        <input type="date" value="${state.saleDate}" max="${todayStr()}"
+          style="width:100%;border:1.5px solid #e4ddca;border-radius:10px;padding:9px 12px;font-size:14px;color:var(--navy);"
+          onchange="state.saleDate=this.value;render()">
+        ${state.saleDate !== todayStr() ? `<div class="small-muted" style="margin-top:6px;">⚠️ Продажбата ќе се запише за <b>${new Date(state.saleDate+'T12:00:00').toLocaleDateString('mk-MK',{day:'numeric',month:'long'})}</b></div>` : ''}
+      </div>
+      <button class="btn gold block" style="padding:14px;font-size:15px;" onclick="submitSale()">✓ Заврши продажба</button>
+      <button class="btn outline block" style="margin-top:8px;" onclick="if(confirm('Испразни кошничка?'))resetSaleForm();render()">Испразни</button>
+      ` : ''}
+      <div class="card" style="margin-top:12px;">
+        <div class="card-title" style="margin-bottom:8px;font-size:13px;">Разно / своен износ</div>
+        <div class="razno-inline">
+          <input type="text" id="razno-desc" placeholder="Опис (нпр. поправка)...">
+          <input type="number" id="razno-amt" placeholder="Сума (ден)" style="width:110px;">
+          <button class="btn outline sm" onclick="addRaznoItem()">+</button>
+        </div>
+      </div>
+    </div>`;
+
+  return `
+    <h2>Внес на продажба</h2>
+    <div class="sale-layout">
+      <div class="sale-catalog">
+        <div class="search-box"><span class="ico">&#128269;</span><input type="text" id="saleSearchInput" placeholder="Пребарај производ..." value="${state.saleSearch||''}" oninput="state.saleSearch=this.value;render()"></div>
+        ${tabsHtml}
+        ${prodGrid}
+      </div>
+      ${cartPanel}
+    </div>
+  `;
+}
+function addRaznoItem(){
+  const desc = document.getElementById('razno-desc').value.trim() || 'Разно';
+  const amt = parseFloat(document.getElementById('razno-amt').value);
+  if(!amt || amt<=0){ toast('Внесете валиден износ.','err'); return; }
+  state.cart.push({typeId:'razno', subId:null, size:null, name:desc, price:amt, qty:1});
+  render();
+}
+function setPaymentType(t){ state.paymentType=t; render(); }
+
+/* ---------- KASA ---------- */
+function kasaCashForDate(dateStr){
+  let sum=0;
+  DB.sales.forEach(s=>{ if(s.date.slice(0,10)===dateStr) sum+=s.paidNow; });
+  DB.deposits.forEach(d=>d.history.forEach(h=>{ if(h.date.slice(0,10)===dateStr && h.note!=='Капар при продажба') sum+=h.amount; }));
+  return sum;
+}
+function kasaSalesForDate(dateStr){ return DB.sales.filter(s=>s.date.slice(0,10)===dateStr).sort((a,b)=>b.date.localeCompare(a.date)); }
+function kasaDoplatiForDate(dateStr){
+  const out = [];
+  DB.deposits.forEach(d=>{
+    d.history.forEach(h=>{
+      if(h.note!=='Капар при продажба' && h.date.slice(0,10)===dateStr){
+        out.push({date:h.date, customerName:d.customerName, amount:h.amount, by:h.by||'—', note:h.note});
+      }
+    });
+  });
+  return out.sort((a,b)=>b.date.localeCompare(a.date));
+}
+
+async function deleteSale(saleId){
+  const sale = DB.sales.find(s=>s.id===saleId);
+  if(!sale) return;
+  if(!confirm('Дали сигурно сакаш да ја избришеш оваа продажба? Артиклите ќе се вратат во роба, а поврзаната муштерија ќе биде избришана.')) return;
+  // 1) врати ги артиклите во тековна состојба
+  sale.items.forEach(it=>{
+    const t = getType(it.typeId);
+    if(!t) return;
+    if(it.size){
+      const pool = it.subId ? (getSubtype(it.typeId,it.subId)||{}).sizes : t.directSizes;
+      if(pool) pool[it.size] = (pool[it.size]||0) + it.qty;
+    } else if(!t.noStock){
+      t.qty = (t.qty||0) + it.qty;
+    }
+  });
+  // 2) избриши ја поврзаната муштерија
+  if(sale.customerId){ DB.customers = DB.customers.filter(c=>c.id!==sale.customerId); }
+  // 3) избриши го поврзаниот капар (доколку постои)
+  DB.deposits = DB.deposits.filter(d=>d.saleId!==sale.id);
+  // 4) избриши ја самата продажба
+  DB.sales = DB.sales.filter(s=>s.id!==saleId);
+  await saveDB(); toast('Продажбата е избришана, робата е вратена.'); render();
+}
+
+function renderKasaView(){
+  const dateStr = state.kasaDate || todayStr();
+  const list = kasaSalesForDate(dateStr);
+  const doplati = kasaDoplatiForDate(dateStr);
+  const isToday = dateStr === todayStr();
+  const isRecent = dateStr >= new Date(Date.now()-7*864e5).toISOString().slice(0,10);
+  const displayDate = new Date(dateStr+'T12:00:00').toLocaleDateString('mk-MK',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+  // ── финансиски breakdown ──
+  const salesRevenue = list.reduce((s,x)=>s+x.paidNow, 0);
+  const doplatiRevenue = doplati.reduce((s,x)=>s+x.amount, 0);
+  const totalRevenue = salesRevenue + doplatiRevenue;
+
+  // ── статистики по категорија ──
+  const catCount = {};
+  let raznoCount = 0, raznoSum = 0;
+  list.forEach(s=>{
+    s.items.forEach(it=>{
+      const t = getType(it.typeId);
+      if(!t){ raznoCount+=it.qty; raznoSum+=it.price*it.qty; return; }
+      const cat = t.category||'Разно';
+      if(!catCount[cat]) catCount[cat]={qty:0,sum:0};
+      catCount[cat].qty += it.qty;
+      catCount[cat].sum += it.price*it.qty;
+    });
+  });
+
+  const catIcon2 = catIcon;
+
+  const allCats = [...new Set(DB.types.map(t=>t.category))];
+
+  const breakdownPopup = state.kasaBreakdown ? `
+    <div class="breakdown-popup">
+      <div style="font-size:12px;color:var(--gold-light);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;">Распоред на промет</div>
+      <div class="bdp-row"><span>Продажби (${list.length} тр.)</span><span>${fmt(salesRevenue)}</span></div>
+      <div class="bdp-row"><span>Доплати на капар (${doplati.length})</span><span>${fmt(doplatiRevenue)}</span></div>
+      <div class="bdp-row"><span>Вкупен промет</span><span>${fmt(totalRevenue)}</span></div>
+    </div>` : '';
+
+  const statsGrid = `
+    <div class="kasa-stats-grid">
+      <div class="kstat highlight"><div class="ks-ico">🧾</div><div class="ks-val">${list.length}</div><div class="ks-lbl">Продажби</div></div>
+      <div class="kstat highlight"><div class="ks-ico">💰</div><div class="ks-val">${doplati.length}</div><div class="ks-lbl">Доплати</div></div>
+      ${allCats.map(c=>{
+        const d = catCount[c]||{qty:0,sum:0};
+        return `<div class="kstat"><div class="ks-ico">${catIcon2(c)}</div><div class="ks-val">${d.qty}</div><div class="ks-lbl">${c}</div></div>`;
+      }).join('')}
+      ${raznoCount>0 ? `<div class="kstat"><div class="ks-ico">✂️</div><div class="ks-val">${raznoCount}</div><div class="ks-lbl">Разно</div></div>` : ''}
+    </div>`;
+
+  return `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+      <h2 style="margin:0;">Тековна каса</h2>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+        <input type="date" value="${dateStr}" max="${todayStr()}"
+          style="border:1.5px solid #e4ddca;border-radius:10px;padding:7px 10px;font-size:13px;color:var(--navy);"
+          onchange="state.kasaDate=this.value;render()">
+        ${!isToday ? `<button class="btn outline sm" onclick="state.kasaDate=todayStr();render()">Денес</button>` : ''}
+      </div>
+    </div>
+
+    <div class="kasa-header">
+      <div class="kh-date">${displayDate}</div>
+      <div class="kh-total">${fmt(totalRevenue)}</div>
+      <div class="kh-sub">вкупен промет${isToday?' денес':''}</div>
+      <div class="kasa-breakdown">
+        <div class="kasa-bd-item" onclick="state.kasaBreakdown=!state.kasaBreakdown;render()">
+          <div class="bdi-lbl">Продажби</div>
+          <div class="bdi-val">${fmt(salesRevenue)}</div>
+          <div class="bdi-sub">${list.length} трансакции</div>
+        </div>
+        <div class="kasa-bd-item" onclick="state.kasaBreakdown=!state.kasaBreakdown;render()">
+          <div class="bdi-lbl">Доплати</div>
+          <div class="bdi-val">${fmt(doplatiRevenue)}</div>
+          <div class="bdi-sub">${doplati.length} доплати</div>
+        </div>
+      </div>
+    </div>
+
+    ${breakdownPopup}
+    ${statsGrid}
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-title">Продажби${isToday?' денес':''}</div>
+      ${list.length===0 ? `<div class="empty"><div class="ico">🧾</div>Нема продажби за овој датум.</div>` :
+      `<table><thead><tr><th>Време</th><th>Муштерија</th><th>Артикли</th><th>Вкупно</th><th>Статус</th>${isRecent?'<th></th>':''}</tr></thead><tbody>
+        ${list.map(s=>`<tr>
+          <td>${new Date(s.date).toLocaleTimeString('mk-MK',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td>${s.customerName||'—'}</td>
+          <td style="font-size:12px;">${s.items.map(i=>i.name+' ×'+i.qty).join(', ')}</td>
+          <td><b>${fmt(s.total)}</b></td>
+          <td>${s.paymentType==='paid'?'<span class="pill paid">Платено</span>':'<span class="pill deposit">Капар '+fmt(s.paidNow)+'</span>'}</td>
+          ${isRecent?`<td><button class="btn danger sm" onclick="deleteSale('${s.id}')">Избриши</button></td>`:''}
+        </tr>`).join('')}
+      </tbody></table>`}
+    </div>
+
+    ${doplati.length===0 ? '' : `
+    <div class="card">
+      <div class="card-title">Доплати на капар${isToday?' денес':''}</div>
+      <table><thead><tr><th>Време</th><th>Муштерија</th><th>Сума</th><th>Внел</th></tr></thead><tbody>
+        ${doplati.map(h=>`<tr>
+          <td>${new Date(h.date).toLocaleTimeString('mk-MK',{hour:'2-digit',minute:'2-digit'})}</td>
+          <td>${h.customerName}</td>
+          <td><b>${fmt(h.amount)}</b></td>
+          <td>${h.by}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`}
+  `;
+}
+/* ---------- ROBA VNES ---------- */
+function renderTypeManageCard(t){
+  const isOpen = state.robaOpen.has(t.id);
+  const toggle = `if(state.robaOpen.has('${t.id}'))state.robaOpen.delete('${t.id}');else state.robaOpen.add('${t.id}');render()`;
+
+  // summary badges
+  let stockSummary = '';
+  if(t.noStock) stockSummary = 'Услуга';
+  else if(!t.sized) stockSummary = `Залога: <b>${t.qty||0}</b>`;
+  else { const tot = typeTotalStock(t); stockSummary = `Залога: <b>${tot}</b> бр.`; }
+
+  const subtypeCount = t.sized && t.subtypes.length>0 ? `<span class="pill" style="background:#f0e9d6;color:var(--navy);">${t.subtypes.length} подтипа</span>` : '';
+  const ico = t.noStock ? svgIco(ICO.service) : t.sized ? svgIco(ICO.layers) : svgIco(ICO.bag);
+
+  const header = `
+    <div class="acc-header" onclick="${toggle}">
+      <div class="acc-ico">${ico}</div>
+      <div class="acc-info">
+        <div class="an">${t.name}</div>
+        <div class="as">${fmt(t.price)} &middot; ${stockSummary}</div>
+      </div>
+      <div class="acc-pills">${subtypeCount}</div>
+      <span class="acc-arrow">▼</span>
+    </div>`;
+
+  if(!isOpen) return `<div class="acc-item ${isOpen?'open':''}">${header}</div>`;
+
+  // --- body ---
+  let body = '';
+  if(!t.sized){
+    body = `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div class="field" style="margin:0;flex:1;min-width:140px;"><label class="fl">Назив</label><input type="text" value="${t.name}" onchange="updateTypeName('${t.id}',this.value)"></div>
+        <div class="field" style="margin:0;width:100px;"><label class="fl">Цена (ден)</label><input type="number" value="${t.price}" onchange="updateTypePrice('${t.id}',this.value)"></div>
+      </div>
+      ${t.noStock ? `<div class="small-muted">Услуга — без залога.</div>` : `
+      <div class="cart-line">
+        <span>Количина на залога</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="qty-btn" onclick="adjustSimpleQty('${t.id}',-1)">−</button>
+          <input type="number" style="width:70px;text-align:center;padding:8px;" value="${t.qty||0}" onchange="setSimpleQty('${t.id}',this.value)">
+          <button class="qty-btn" onclick="adjustSimpleQty('${t.id}',1)">+</button>
+        </div>
+      </div>`}
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn danger sm" onclick="deleteType('${t.id}')">Избриши производ</button>
+      </div>`;
+  } else {
+    const directSizesHtml = `
+      <div class="subtype-card">
+        <div class="subtype-head"><span class="sn">Бројки (без подтип)</span><span class="small-muted">вкупно ${sizesSum(t.directSizes)}</span></div>
+        <div class="size-chip-row">
+          ${Object.entries(t.directSizes).map(([lbl,q])=>`
+            <div class="size-chip"><b>${lbl}</b><input type="number" value="${q}" min="0" onchange="updateSizeQty('${t.id}',null,'${lbl}',this.value)"><span class="rm" onclick="removeSize('${t.id}',null,'${lbl}')">&times;</span></div>`).join('') || '<span class="small-muted">Нема внесени бројки.</span>'}
+        </div>
+        <div class="add-size-row">
+          <input type="text" id="sz-${t.id}-direct-label" placeholder="број/големина">
+          <input type="number" class="qty" id="sz-${t.id}-direct-qty" placeholder="кол." value="1">
+          <button class="btn outline sm" onclick="addSizeRow('${t.id}',null)">+ Додај број</button>
+        </div>
+      </div>`;
+    const subtypesHtml = t.subtypes.map(s=>`
+      <div class="subtype-card">
+        <div class="subtype-head">
+          <span class="sn">${s.name} <span class="small-muted">(${sizesSum(s.sizes)} бр.)</span></span>
+          <button class="btn danger sm" onclick="deleteSubtype('${t.id}','${s.id}')">Избриши</button>
+        </div>
+        <div class="size-chip-row">
+          ${Object.entries(s.sizes).map(([lbl,q])=>`
+            <div class="size-chip"><b>${lbl}</b><input type="number" value="${q}" min="0" onchange="updateSizeQty('${t.id}','${s.id}','${lbl}',this.value)"><span class="rm" onclick="removeSize('${t.id}','${s.id}','${lbl}')">&times;</span></div>`).join('') || '<span class="small-muted">Нема бројки.</span>'}
+        </div>
+        <div class="add-size-row">
+          <input type="text" id="sz-${t.id}-${s.id}-label" placeholder="број/големина">
+          <input type="number" class="qty" id="sz-${t.id}-${s.id}-qty" placeholder="кол." value="1">
+          <button class="btn outline sm" onclick="addSizeRow('${t.id}','${s.id}')">+ Додај број</button>
+        </div>
+      </div>`).join('');
+
+    body = `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+        <div class="field" style="margin:0;flex:1;min-width:140px;"><label class="fl">Назив</label><input type="text" value="${t.name}" onchange="updateTypeName('${t.id}',this.value)"></div>
+        <div class="field" style="margin:0;width:100px;"><label class="fl">Цена (ден)</label><input type="number" value="${t.price}" onchange="updateTypePrice('${t.id}',this.value)"></div>
+      </div>
+      ${t.subtypes.length===0 ? directSizesHtml : subtypesHtml}
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <button class="btn outline sm" onclick="openNewSubtypeModal('${t.id}')">+ Нов подтип</button>
+        <button class="btn danger sm" onclick="deleteType('${t.id}')">Избриши производ</button>
+      </div>`;
+  }
+
+  return `<div class="acc-item open">${header}<div class="acc-body">${body}</div></div>`;
+}
+function renderRobaVnesView(){
+  const cats = categories();
+  if(!state.robaCat || !cats.includes(state.robaCat)) state.robaCat = cats[0];
+  const q = (state.robaSearch||'').toLowerCase().trim();
+
+  const tabsHtml = `<div class="roba-tabs">
+    ${cats.map(c=>{
+      const cnt = DB.types.filter(t=>t.category===c).length;
+      return `<button class="roba-tab ${!q && state.robaCat===c?'active':''}" onclick="state.robaCat='${c}';state.robaSearch='';render()">${catIcon(c)} ${c} <span class="cnt">${cnt}</span></button>`;
+    }).join('')}
+  </div>`;
+
+  const items = q
+    ? DB.types.filter(t=>t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q))
+    : DB.types.filter(t=>t.category===state.robaCat);
+
+  const allOpen = items.length>0 && items.every(t=>state.robaOpen.has(t.id));
+  const toggleAllBtn = items.length>0 ? `<button class="btn outline sm" style="margin-bottom:14px;" onclick="toggleAllRoba(${allOpen})">
+    ${allOpen ? '▲ Затвори сè' : '▼ Отвори сè'}
+  </button>` : '';
+  const html = items.map(t=>renderTypeManageCard(t)).join('');
+  return `
+    <h2>Внес на роба</h2>
+    <div class="sub" style="margin-bottom:16px;">Кликни на производ за да го прошириш и уредиш.</div>
+    <button class="btn gold" style="margin-bottom:18px;" onclick="openNewTypeModal()">+ Нов тип на производ</button>
+    <div class="search-box" style="margin-bottom:14px;"><span class="ico">&#128269;</span><input type="text" id="robaSearchInput" placeholder="Пребарај производ по име..." value="${state.robaSearch||''}" oninput="state.robaSearch=this.value;render()"></div>
+    ${q ? '' : tabsHtml}
+    ${toggleAllBtn}
+    ${html || `<div class="empty"><div class="ico">📦</div>${q ? 'Нема пронајдени производи.' : 'Нема производи во оваа категорија.'}</div>`}
+  `;
+}
+function toggleAllRoba(allOpen){
+  const q = (state.robaSearch||'').toLowerCase().trim();
+  const items = q
+    ? DB.types.filter(t=>t.name.toLowerCase().includes(q)||t.category.toLowerCase().includes(q))
+    : DB.types.filter(t=>t.category===state.robaCat);
+  items.forEach(t=> allOpen ? state.robaOpen.delete(t.id) : state.robaOpen.add(t.id));
+  render();
+}
+
+/* ---------- PICKER MODAL ---------- */
+function openPicker(typeId){
+  const t = getType(typeId);
+  if(!t) return;
+  if(!t.sized){
+    addSimpleToCart(typeId); return;
+  }
+  // pre-select subtype if only one
+  const subId = (t.subtypes.length===1) ? t.subtypes[0].id : '';
+  state.picker = {typeId, subId, subSearch:'', size:'', qty:1};
+  render();
+}
+function closePicker(){ state.picker=null; render(); }
+
+function renderPickerModal(){
+  const p = state.picker;
+  if(!p) return '';
+  const t = getType(p.typeId);
+  if(!t) return '';
+  const hasSubtypes = t.subtypes.length>0;
+  let sizesPool = hasSubtypes
+    ? (p.subId ? (getSubtype(t.id,p.subId)||{sizes:{}}).sizes : null)
+    : t.directSizes;
+  const subHtml = hasSubtypes ? `
+    <div style="margin-bottom:14px;">
+      <label class="fl" style="margin-bottom:6px;">Подтип</label>
+      <input type="text" id="picker-sub-search" value="${p.subSearch||''}" placeholder="🔍 пребарај подтип..."
+        style="margin-bottom:8px;"
+        oninput="filterSubList(this.value)">
+      <div id="sub-list" style="border:1.5px solid #e4ddca;border-radius:10px;overflow:hidden;max-height:200px;overflow-y:auto;">
+        ${t.subtypes.map(s=>`
+          <div class="sub-opt" data-name="${s.name.toLowerCase()}"
+            onclick="state.picker.subId='${s.id}';state.picker.size='';document.querySelector('.modal').innerHTML=buildPickerInner();"
+            style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #f1ecd9;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;${p.subId===s.id?'background:#fffbf0;font-weight:700;border-left:3px solid var(--gold);':''}">
+            <span>${s.name}</span>
+            <span class="small-muted">${sizesSum(s.sizes)} бр.</span>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+  const sizeHtml = sizesPool ? `
+    <div><label class="fl" style="margin-bottom:8px;">Број / Големина</label>
+    <div class="picker-sizes">
+      ${Object.entries(sizesPool).map(([lbl,q])=>`
+        <button class="sz-btn ${p.size===lbl?'selected':''}" ${q<=0?'disabled':''} 
+          onclick="state.picker.size='${lbl}';document.querySelector('.modal').innerHTML=buildPickerInner();">
+          ${lbl}<br><span style="font-size:10px;font-weight:400;">${q} бр.</span>
+        </button>`).join('')}
+    </div></div>` : (hasSubtypes && !p.subId ? `<div class="small-muted">↑ Прво избери подтип</div>` : `<div class="small-muted">Нема внесени бројки.</div>`);
+  const qtyHtml = `
+    <div class="qty-row">
+      <button class="qty-big-btn" onclick="if(state.picker.qty>1){state.picker.qty--;document.querySelector('.modal').innerHTML=buildPickerInner();}">−</button>
+      <span class="qty-big-val">${p.qty}</span>
+      <button class="qty-big-btn" onclick="state.picker.qty++;document.querySelector('.modal').innerHTML=buildPickerInner();">+</button>
+      <span class="small-muted">количина</span>
+    </div>`;
+  const canAdd = p.size || !sizesPool;
+  return `
+    <div style="font-size:20px;font-weight:700;color:var(--navy);margin-bottom:4px;">${t.name}</div>
+    <div class="small-muted" style="margin-bottom:16px;">${fmt(t.price)}</div>
+    ${subHtml}
+    ${sizeHtml}
+    ${qtyHtml}
+    <button class="btn gold block" style="margin-top:8px;" ${canAdd?'':'disabled'} onclick="pickerAddToCart()">Додај во кошничка</button>
+    <button class="btn outline block" style="margin-top:8px;" onclick="closePicker()">Откажи</button>`;
+}
+function filterSubList(q){
+  const list = document.getElementById('sub-list');
+  if(!list) return;
+  const term = q.toLowerCase();
+  list.querySelectorAll('.sub-opt').forEach(el=>{
+    el.style.display = el.dataset.name.includes(term) ? '' : 'none';
+  });
+}
+function buildPickerInner(){ return renderPickerModal(); }
+
+function pickerAddToCart(){
+  const p = state.picker;
+  const t = getType(p.typeId);
+  if(!t) return;
+  const sub = p.subId ? getSubtype(t.id, p.subId) : null;
+  const name = sub ? t.name+' / '+sub.name : t.name;
+  state.cart.push({typeId:t.id, subId:p.subId||null, size:p.size||null, name:name+(p.size?' ('+p.size+')':''), price:t.price, qty:p.qty});
+  toast(name+' додаден во кошничка.');
+  state.picker = null;
+  render();
+}
+function seriesBadge(nonZero){
+  if(nonZero>=6) return '<span class="series-badge green">🟢 Комплет</span>';
+  if(nonZero>=4) return '<span class="series-badge yellow">🟡 Средно</span>';
+  return '<span class="series-badge red">🔴 Нарачај</span>';
+}
+function seriesStatus(nonZero){ return nonZero>=6?'green':nonZero>=4?'yellow':'red'; }
+function kosulaChip(lbl,qty){
+  const cls=qty>=10?'ok':qty>=5?'warn':'bad';
+  return `<div class="rt-chip ${cls}"><span class="ch-lbl">${lbl}</span><span class="ch-qty">${qty}</span></div>`;
+}
+function kondurChip(lbl,qty){
+  if(qty>0) return `<div class="rt-chip ok"><span class="ch-lbl">${lbl}</span><span class="ch-qty">${qty}</span></div>`;
+  return `<div class="rt-chip missing"><span class="ch-lbl">${lbl}</span><span class="ch-qty">Фали!</span></div>`;
+}
+// Определи очекувани бројки за кондури/патики по цена
+function kondurExpectedSizes(t){
+  if(t.price>=3400) return ['40','41','42','43','44','45','46','47'];
+  return ['40','41','42','43','44'];
+}
+// статус на производ за филтрирање
+function typeStatus(t){
+  if(!t.sized){
+    const q=t.qty||0; return q<=2?'red':q<=5?'yellow':'green';
+  }
+  if(isOdeloType(t)){
+    const series=t.subtypes.length>0?t.subtypes:[{sizes:t.directSizes}];
+    const statuses=series.map(s=>seriesStatus(Object.entries(s.sizes||{}).filter(([,q])=>q>0).length));
+    if(statuses.includes('red')) return 'red';
+    if(statuses.includes('yellow')) return 'yellow';
+    return 'green';
+  }
+  if(isKosulaType(t)){
+    const pool=t.subtypes.length>0?t.subtypes.flatMap(s=>Object.values(s.sizes)):Object.values(t.directSizes);
+    if(pool.some(q=>q<5)) return 'red';
+    if(pool.some(q=>q<10)) return 'yellow';
+    return 'green';
+  }
+  if(isKondurType(t)){
+    const expected=kondurExpectedSizes(t);
+    const allSizes=t.subtypes.length>0
+      ?Object.fromEntries(t.subtypes.flatMap(s=>Object.entries(s.sizes)))
+      :t.directSizes;
+    if(expected.some(sz=>!allSizes[sz]||(allSizes[sz]||0)===0)) return 'red';
+    return 'green';
+  }
+  return 'green';
+}
+function renderRobaTekovnaView(){
+  const cats = categories();
+  if(!state.robaTekCat||!cats.includes(state.robaTekCat)) state.robaTekCat=cats[0];
+  const f=state.robaTekFilter||'all';
+  const catIco=c=>{const l=(c||'').toLowerCase();if(l.includes('одел'))return'🧥';if(l.includes('кошул'))return'👔';if(l.includes('кондур'))return'👞';if(l.includes('патик'))return'👟';if(l.includes('каиш'))return'🪢';if(l.includes('крават'))return'👒';return'📦';};
+
+  // alert counts — само по ПРОИЗВОД (не по бројка)
+  let cntRed=0,cntYellow=0,cntGreen=0;
+  DB.types.filter(t=>!t.noStock).forEach(t=>{
+    const s=typeStatus(t);
+    if(s==='red') cntRed++;
+    else if(s==='yellow') cntYellow++;
+    else cntGreen++;
+  });
+
+  const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
+
+  const filterBar=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <button class="btn ${f==='all'?'gold':'outline'} sm" onclick="state.robaTekFilter='all';render()">Сè</button>
+    <button style="background:${f==='red'?'#fdecea':'#fff'};border:1.5px solid ${f==='red'?'#e57373':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#c62828;cursor:pointer;" onclick="state.robaTekFilter='red';render()">🔴 Нарачај (${cntRed})</button>
+    <button style="background:${f==='yellow'?'#fff8e1':'#fff'};border:1.5px solid ${f==='yellow'?'#ffcc02':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#f57f17;cursor:pointer;" onclick="state.robaTekFilter='yellow';render()">🟡 Средно (${cntYellow})</button>
+    <button style="background:${f==='green'?'#e8f5e9':'#fff'};border:1.5px solid ${f==='green'?'#66bb6a':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#2e7d32;cursor:pointer;" onclick="state.robaTekFilter='green';render()">🟢 Комплет (${cntGreen})</button>
+  </div>`;
+
+  let items=DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
+  if(f!=='all') items=items.filter(t=>typeStatus(t)===f);
+
+  const cards=items.map(t=>{
+    let body='';
+    if(!t.sized){
+      const q=t.qty||0;const cls=q<=2?'bad':q<=5?'warn':'ok';
+      body=`<div class="rt-chip-row"><div class="rt-chip ${cls}"><span class="ch-lbl">залога</span><span class="ch-qty">${q}</span></div></div>`;
+    } else if(isOdeloType(t)){
+      const series=t.subtypes.length>0?t.subtypes:[{name:'без подтип',sizes:t.directSizes}];
+      body=series.map(s=>{
+        const entries=Object.entries(s.sizes||{});
+        const nonZero=entries.filter(([,q])=>q>0).length;
+        const szHtml=entries.map(([lbl,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${lbl}${q>0?' ('+q+')':''}</span>`).join('');
+        return `<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${szHtml||'—'}</div>${seriesBadge(nonZero)}</div>`;
+      }).join('');
+    } else if(isKosulaType(t)){
+      body=t.subtypes.length>0
+        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div><div class="rt-chip-row">${Object.entries(s.sizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div></div>`).join('')
+        :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div>`;
+    } else if(isKondurType(t)){
+      const expected=kondurExpectedSizes(t);
+      const renderSizes=pool=>{
+        const merged={...pool};
+        return `<div class="rt-chip-row">${expected.map(sz=>kondurChip(sz,merged[sz]||0)).join('')}</div>`;
+      };
+      body=t.subtypes.length>0
+        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${renderSizes(s.sizes)}</div>`).join('')
+        :renderSizes(t.directSizes);
+    } else {
+      body=t.subtypes.length>0
+        ?t.subtypes.map(s=>`<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${Object.entries(s.sizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div></div>`).join('')
+        :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div>`;
+    }
+    const st=typeStatus(t);
+    const borderClr=st==='red'?'#e57373':st==='yellow'?'#ffcc02':'#e4ddca';
+    return `<div class="rt-card" style="border-color:${borderClr};"><div class="rt-card-head"><span class="rt-name">${t.name}</span><span class="rt-price">${fmt(t.price)}</span></div><div class="rt-body">${body}</div></div>`;
+  }).join('');
+
+  return `<h2>Тековна роба</h2>${tabs}${filterBar}${items.length===0?`<div class="empty"><div class="ico">📦</div>${f==='all'?'Нема производи во оваа категорија.':'Нема производи со овој статус.'}</div>`:`<div class="rt-grid">${cards}</div>`}`;
+}
+
+
+
+/* ---------- CUSTOMERS ---------- */
+function renderCustomersView(){
+  const q = (state.custSearch||'').toLowerCase();
+  const list = DB.customers.filter(c=>c.name.toLowerCase().includes(q) || c.phone.includes(q)).sort((a,b)=>b.purchases-a.purchases);
+  return `
+    <h2>База на муштерии</h2>
+    <div class="sub">Вкупно муштерии: <b>${DB.customers.length}</b></div>
+    <div class="search-box"><span class="ico">&#128269;</span><input type="text" id="custSearchInput" placeholder="Пребарај по име или телефон..." value="${state.custSearch||''}" oninput="state.custSearch=this.value;render()"></div>
+    <div class="card">
+      ${list.length===0 ? `<div class="empty"><div class="ico">&#128100;</div>Нема пронајдени муштерии.</div>` :
+      `<table><thead><tr><th>Име</th><th>Телефон</th><th>Купувања</th><th>Коментар</th></tr></thead><tbody>
+        ${list.map(c=>`<tr><td><a href="#" onclick="openCustomerHistory('${c.id}');return false;" style="color:var(--navy);font-weight:600;text-decoration:underline;">${c.name}</a></td><td>${c.phone}</td><td><b>${c.purchases}</b>${c.purchases>1?' <span class="pill paid">постојан</span>':''}</td><td><input type="text" value="${c.comment||''}" placeholder="додај коментар..." style="border:1px solid #e4ddca;padding:6px 8px;font-size:13px;" onchange="updateCustComment('${c.id}',this.value)"></td></tr>`).join('')}
+      </tbody></table>`}
+    </div>`;
+}
+async function updateCustComment(id, val){ const c=DB.customers.find(x=>x.id===id); if(c){ c.comment=val; await saveDB(); toast('Коментар зачуван.'); } }
+
+function openCustomerHistory(custId){
+  const cust = DB.customers.find(c=>c.id===custId);
+  if(!cust) return;
+  const sales = DB.sales.filter(s=>s.customerId===custId).sort((a,b)=>b.date.localeCompare(a.date));
+  const rowsHtml = sales.length===0 ? `<div class="small-muted">Нема евидентирани продажби.</div>` : sales.map(s=>{
+    const dt = new Date(s.date).toLocaleString('mk-MK',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const itemsStr = s.items.map(i=>i.name+' ×'+i.qty).join(', ');
+    const payStr = s.paymentType==='paid' ? 'Платено целосно' : `Капар ${fmt(s.paidNow)} (остаток ${fmt(s.depositRemaining)})`;
+    return `<div class="deposit-row">
+      <div class="small-muted">${dt}</div>
+      <div style="margin:4px 0;">${itemsStr}</div>
+      <div><b>${fmt(s.total)}</b> &middot; ${payStr}</div>
+    </div>`;
+  }).join('');
+  showModal(`
+    <h3>${cust.name}</h3>
+    <p class="small-muted" style="margin-bottom:14px;">${cust.phone} &middot; вкупно купувања: <b>${cust.purchases}</b></p>
+    ${rowsHtml}
+    <button class="btn outline block" style="margin-top:14px;" onclick="closeModal()">Затвори</button>
+  `);
+}
+
+/* ---------- DEPOSITS ---------- */
+function renderDepositsView(){
+  const open = DB.deposits.filter(d=>!d.settled);
+  const settled = DB.deposits.filter(d=>d.settled);
+  return `
+    <h2>Отворени капари</h2>
+    <div class="sub">Муштерии со остаток за доплата.</div>
+    ${open.length===0 ? `<div class="empty"><div class="ico">&#128273;</div>Нема отворени капари во моментот.</div>` :
+      open.map(d=>{ const remaining=d.total-d.paid; const pct=Math.round((d.paid/d.total)*100);
+        const histHtml = d.history.map(h=>{
+          const dt = new Date(h.date).toLocaleString('mk-MK',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+          return `<div class="small-muted">${dt} — ${fmt(h.amount)}${h.by?' &middot; внел: <b>'+h.by+'</b>':''}${h.note?' &middot; '+h.note:''}</div>`;
+        }).join('');
+        return `<div class="deposit-row">
+          <div class="flexbar" style="margin-bottom:6px;"><div><b>${d.customerName}</b> <span class="small-muted">${d.customerPhone}</span></div>
+            <button class="btn gold sm" onclick='openDeposit(${JSON.stringify(d).replace(/'/g,"&#39;")})'>Внеси доплата</button></div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+          <div class="small-muted">Платено ${fmt(d.paid)} од ${fmt(d.total)} &middot; Остаток <b style="color:var(--danger)">${fmt(remaining)}</b></div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f1ecd9;">${histHtml}</div>
+        </div>`;
+      }).join('')}
+    ${settled.length>0 ? `<div class="cat-label" style="margin-top:24px;">Завршени капари</div>${settled.map(d=>`<div class="deposit-row settled"><b>${d.customerName}</b> — ${fmt(d.total)} <span class="pill paid">исплатено</span></div>`).join('')}` : ''}
+  `;
+}
+
+/* ---------- OWNER PIN ---------- */
+function renderPinScreen(){
+  const dots = Array.from({length:4}).map((_,i)=>`<div class="pin-dot ${i<state.pinEntry.length?'filled':''}"></div>`).join('');
+  return `<div class="pin-screen"><div class="pin-box">
+    <h2>Извештај</h2><div class="small-muted">Внесете ПИН за пристап до извештаите на сопственикот</div>
+    <div class="pin-dots">${dots}</div>
+    <div class="pin-pad">
+      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="pin-key" onclick="pinPress(${n})">${n}</button>`).join('')}
+      <button class="pin-key" onclick="setView('sale')" style="color:var(--danger);">Откажи</button>
+      <button class="pin-key" onclick="pinPress(0)">0</button>
+      <button class="pin-key" onclick="pinBack()">&larr;</button>
+    </div>
+  </div></div>`;
+}
+function pinPress(n){
+  if(state.pinEntry.length>=4) return;
+  state.pinEntry += n;
+  if(state.pinEntry.length===4){
+    if(state.pinEntry===DB.pin){ state.ownerUnlocked=true; state.pinEntry=''; render(); }
+    else { toast('Грешен ПИН.','err'); state.pinEntry=''; render(); }
+  } else render();
+}
+function pinBack(){ state.pinEntry = state.pinEntry.slice(0,-1); render(); }
+
+/* ---------- OWNER STATS ---------- */
+function renderOwnerView(){
+  const s = computeStats();
+  const mn = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
+  const curMonthName = mn[new Date().getMonth()] + ' ' + yearStr();
+
+  // Build type+subtype chart cards HTML
+  let typeChartCards = '';
+  Object.values(s.subtypeSalesByType).forEach((entry,i)=>{
+    const labels = Object.keys(entry.data);
+    const vals = Object.values(entry.data);
+    if(labels.length===0) return;
+    typeChartCards += `
+      <div class="card">
+        <div class="card-title">${entry.typeLabel} — продажба по подтип/број</div>
+        <div class="chart-wrap"><canvas id="chartType${i}"></canvas></div>
+      </div>`;
+  });
+
+  const html = `
+    <h2>Извештај за сопственик</h2>
+    <div class="flexbar"><div class="sub">Целосен преглед на промет и продажба</div><button class="btn outline sm" onclick="state.ownerUnlocked=false;render()">Заклучи</button></div>
+
+    <div class="stat-grid">
+      <div class="stat-box"><div class="lbl">Промет годинава</div><div class="val">${fmt(s.yearRev)}</div></div>
+      <div class="stat-box"><div class="lbl">Промет овој месец</div><div class="val">${fmt(s.monthRev)}</div></div>
+      <div class="stat-box alt"><div class="lbl">Продадени одела</div><div class="val">${s.suitsSold}</div></div>
+      <div class="stat-box alt"><div class="lbl">Постојани муштерии</div><div class="val">${s.returning}</div></div>
+    </div>
+
+    <div class="card" style="margin-top:18px;">
+      <div class="card-title">Промет по месец — ${yearStr()} (ден)</div>
+      <div class="chart-wrap tall"><canvas id="chartYearMonths"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Промет по ден — ${curMonthName} (ден)</div>
+      <div class="chart-wrap tall"><canvas id="chartMonthDays"></canvas></div>
+    </div>
+
+    ${typeChartCards || '<div class="card"><div class="small-muted">Нема доволно продажби за приказ по тип/подтип.</div></div>'}
+
+    <div class="card">
+      <div class="card-title">Муштерии за ${curMonthName}</div>
+      <div class="stat-grid" style="margin-bottom:0;">
+        <div class="stat-box alt"><div class="lbl">Вкупно со купување</div><div class="val">${s.custTotal}</div></div>
+        <div class="stat-box alt"><div class="lbl">Нови муштерии</div><div class="val" style="color:var(--success)">${s.custNew}</div></div>
+        <div class="stat-box alt"><div class="lbl">Повратни купувачи</div><div class="val" style="color:var(--gold)">${s.custReturning}</div></div>
+      </div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1ecd9;">
+        <div class="card-title" style="margin-bottom:10px;">База на муштерии (вкупно: ${DB.customers.length})</div>
+        <button class="btn green" onclick="exportCustomersExcel()">⬇ Симни муштерии во Excel</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Најпродавани типови</div>
+      ${s.topTypes.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Тип</th><th>Продадено</th></tr></thead><tbody>${s.topTypes.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
+    </div>
+    <div class="card">
+      <div class="card-title">Најпродавани конкретни ставки</div>
+      ${s.topDetail.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Ставка</th><th>Продадено</th></tr></thead><tbody>${s.topDetail.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
+    </div>
+    <div class="card">
+      <div class="card-title">Промени ПИН</div>
+      <div class="row2"><input type="password" id="newPin" placeholder="нов 4-цифрен ПИН" maxlength="4"><button class="btn outline" onclick="changePin()">Сними нов ПИН</button></div>
+    </div>`;
+
+  // Draw charts after DOM update
+  requestAnimationFrame(()=>{
+    const gold = '#b08d4e'; const goldLight = '#d9bb7e'; const navy = '#101b2d';
+    const chartDefaults = {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#8a93a3',font:{size:11}},grid:{display:false}},
+        y:{ticks:{color:'#8a93a3',font:{size:11},callback:v=>v>=1000?(v/1000)+'k':v},grid:{color:'#f1ecd9'},beginAtZero:true}
+      }
+    };
+
+    // Year months chart
+    const ctxY = document.getElementById('chartYearMonths');
+    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>i===new Date().getMonth()?gold:goldLight),borderRadius:6}]},options:chartDefaults});
+
+    // Month days chart
+    const ctxM = document.getElementById('chartMonthDays');
+    if(ctxM) new Chart(ctxM,{type:'bar',data:{labels:s.monthDayLabels,datasets:[{data:s.monthDayData,backgroundColor:navy,borderRadius:4}]},options:chartDefaults});
+
+    // Type+subtype charts
+    Object.values(s.subtypeSalesByType).forEach((entry,i)=>{
+      const labels = Object.keys(entry.data);
+      const vals = Object.values(entry.data);
+      if(labels.length===0) return;
+      const ctx = document.getElementById('chartType'+i);
+      if(ctx) new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:vals,backgroundColor:gold,borderRadius:5}]},options:{...chartDefaults,scales:{...chartDefaults.scales,y:{...chartDefaults.scales.y,ticks:{...chartDefaults.scales.y.ticks,callback:v=>v}}}}});
+    });
+  });
+
+  return html;
+}
+
+function exportCustomersExcel(){
+  if(!window.XLSX){ toast('XLSX не е достапно.','err'); return; }
+  const data = DB.customers.map(c=>({
+    'Име': c.name,
+    'Телефон': c.phone,
+    'Купувања': c.purchases,
+    'Коментар': c.comment||''
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [{wch:30},{wch:18},{wch:12},{wch:40}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Муштерии');
+  XLSX.writeFile(wb, 'pako-classic-musterii.xlsx');
+  toast('Excel фајлот е симнат.');
+}
+
+/* ======================= INIT ======================= */
+async function changePin(){
+  const v = document.getElementById('newPin').value.trim();
+  if(!/^\d{4}$/.test(v)){ toast('ПИН мора да биде 4 цифри.','err'); return; }
+  DB.pin = v; await saveDB(); toast('ПИН-от е променет.');
+}
+
+async function init(){
+  document.getElementById('root').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--navy);font-family:'Playfair Display',serif;font-size:18px;">Pako Classic — се вчитува...</div>`;
+
+  const { data: { session } } = await sb.auth.getSession();
+  if(!session){ renderAuthScreen(); return; }
+  authUser = session.user;
+
+  await loadDB();
+  render();
+  subscribeRealtime();
+
+  sb.auth.onAuthStateChange((event, session)=>{
+    if(event === 'SIGNED_OUT'){ authUser = null; renderAuthScreen(); }
+  });
+}
+init();
+</script>
+</body>
+</html>
