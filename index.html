@@ -1438,9 +1438,10 @@ function renderRobaTekovnaView(){
     <button style="background:${f==='green'?'#e8f5e9':'#fff'};border:1.5px solid ${f==='green'?'#66bb6a':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#2e7d32;cursor:pointer;" onclick="state.robaTekFilter='green';render()">🟢 Комплет (${cntGreen})</button>
   </div>`;
 
-  let items=catItems;
+  let items = q
+    ? DB.types.filter(t=>!t.noStock && t.name.toLowerCase().includes(q))
+    : catItems;
   if(f!=='all') items=items.filter(t=>typeHasStatus(t,f));
-  if(q) items=items.filter(t=>t.name.toLowerCase().includes(q));
 
   const cards=items.map(t=>{
     let body='';
@@ -1461,14 +1462,13 @@ function renderRobaTekovnaView(){
         :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div>`;
     } else if(isKondurType(t)){
       const expected=kondurExpectedSizes(t);
-      const seriesList=t.subtypes.length>0?t.subtypes:[{name:'',sizes:t.directSizes}];
-      body=seriesList.map(s=>{
-        const sizes=s.sizes||{};
-        const present=expected.filter(sz=>sizes[sz]>0).length;
-        const chips=expected.filter(sz=>sizes[sz]>0).map(sz=>kondurChip(sz,sizes[sz])).join('');
-        const head=`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">${s.name?`<span class="small-muted" style="font-size:11px;font-weight:600;">${s.name}</span>`:'<span></span>'}${kondurSeriesBadge(present,expected.length)}</div>`;
-        return `<div style="margin-bottom:10px;">${head}<div class="rt-chip-row">${chips||'<span class="small-muted">Нема ниту една бројка.</span>'}</div></div>`;
-      }).join('');
+      const renderSizes=pool=>{
+        const merged={...pool};
+        return `<div class="rt-chip-row">${expected.map(sz=>kondurChip(sz,merged[sz]||0)).join('')}</div>`;
+      };
+      body=t.subtypes.length>0
+        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${renderSizes(s.sizes)}</div>`).join('')
+        :renderSizes(t.directSizes);
     } else {
       body=t.subtypes.length>0
         ?t.subtypes.map(s=>`<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${Object.entries(s.sizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div></div>`).join('')
