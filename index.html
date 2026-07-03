@@ -1427,12 +1427,37 @@ function renderRobaTekovnaView(){
     ? DB.types.filter(t=>!t.noStock && typeMatchesQuery(t,q))
     : DB.types.filter(t=>t.category===state.robaTekCat&&!t.noStock);
 
-  // alert counts — сметани од ИСТАТА база што се прикажува (за да се согласуваат бројките со картичките)
+  // имиња на секоја поединечна серија (подтип/боја) во ИСТ редослед како typeSeriesStatuses(t)
+  const seriesNamesFor=t=>{
+    if(!t.sized) return [null];
+    return t.subtypes.length>0 ? t.subtypes.map(s=>s.name) : [null];
+  };
+  // дали производот (по име/категорија) веќе одговара на пребарувањето — тогаш се прикажуваат СИТЕ негови серии
+  const productNameMatch=t=> !q || t.name.toLowerCase().includes(q) || (t.category||'').toLowerCase().includes(q);
+  // индекси на серии (бои/подтипови) кои треба да се прикажат за овој производ, според пребарувањето И статус-филтерот
+  const visibleSeriesIdx=t=>{
+    const statuses=typeSeriesStatuses(t), names=seriesNamesFor(t), pMatch=productNameMatch(t);
+    const idxs=[];
+    statuses.forEach((st,i)=>{
+      const nameOk = !q || pMatch || (names[i]&&names[i].toLowerCase().includes(q));
+      const statusOk = f==='all' || st===f;
+      if(nameOk && statusOk) idxs.push(i);
+    });
+    return idxs;
+  };
+  // статуси на серии кои одговараат само на ПРЕБАРУВАЊЕТО (без статус-филтер) — за точни бројки во копчињата
+  const searchMatchedStatuses=t=>{
+    const statuses=typeSeriesStatuses(t), names=seriesNamesFor(t), pMatch=productNameMatch(t);
+    return statuses.filter((st,i)=> !q || pMatch || (names[i]&&names[i].toLowerCase().includes(q)));
+  };
+
+  // alert counts — сметани од истата логика што ги прикажува картичките, за да се согласуваат бројките со она што реално се гледа
   let cntRed=0,cntYellow=0,cntGreen=0;
   baseItems.forEach(t=>{
-    if(typeHasStatus(t,'red')) cntRed++;
-    if(typeHasStatus(t,'yellow')) cntYellow++;
-    if(typeHasStatus(t,'green')) cntGreen++;
+    const st=searchMatchedStatuses(t);
+    if(st.includes('red')) cntRed++;
+    if(st.includes('yellow')) cntYellow++;
+    if(st.includes('green')) cntGreen++;
   });
 
   const tabs=`<div class="roba-tabs" style="margin-bottom:12px;">${cats.map(c=>`<button class="roba-tab ${!q&&state.robaTekCat===c?'active':''}" onclick="state.robaTekCat='${c}';state.robaTekFilter='all';state.robaTekSearch='';render()">${catIco(c)} ${c}</button>`).join('')}</div>`;
@@ -1448,39 +1473,49 @@ function renderRobaTekovnaView(){
     <button style="background:${f==='green'?'#e8f5e9':'#fff'};border:1.5px solid ${f==='green'?'#66bb6a':'#e4ddca'};border-radius:20px;padding:6px 14px;font-size:13px;font-weight:600;color:#2e7d32;cursor:pointer;" onclick="state.robaTekFilter='green';render()">🟢 Комплет (${cntGreen})</button>
   </div>`;
 
-  let items = baseItems;
-  if(f!=='all') items=items.filter(t=>typeHasStatus(t,f));
+  // производи кои имаат БАРЕМ ЕДНА серија што поминува низ двата филтри (пребарување + статус)
+  const items = baseItems.filter(t=>visibleSeriesIdx(t).length>0);
 
   const cards=items.map(t=>{
+    const idxs=visibleSeriesIdx(t); // само овие серии (бои/подтипови) се прикажуваат во картичката
     let body='';
     if(!t.sized){
       const qty=t.qty||0;const cls=qty<=2?'bad':qty<=5?'warn':'ok';
       body=`<div class="rt-chip-row"><div class="rt-chip ${cls}"><span class="ch-lbl">залога</span><span class="ch-qty">${qty}</span></div></div>`;
     } else if(isOdeloType(t)){
       const series=t.subtypes.length>0?t.subtypes:[{name:'без подтип',sizes:t.directSizes}];
-      body=series.map(s=>{
+      body=idxs.map(i=>{
+        const s=series[i];
         const entries=Object.entries(s.sizes||{});
         const nonZero=entries.filter(([,q])=>q>0).length;
         const szHtml=entries.map(([lbl,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${lbl}${q>0?' ('+q+')':''}</span>`).join('');
         return `<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${szHtml||'—'}</div>${seriesBadge(nonZero)}</div>`;
       }).join('');
     } else if(isKosulaType(t)){
-      body=t.subtypes.length>0
-        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div><div class="rt-chip-row">${Object.entries(s.sizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div></div>`).join('')
-        :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div>`;
+      const series=t.subtypes.length>0?t.subtypes:[{name:null,sizes:t.directSizes}];
+      body=idxs.map(i=>{
+        const s=series[i];
+        const chipRow=`<div class="rt-chip-row">${Object.entries(s.sizes).map(([l,q])=>kosulaChip(l,q)).join('')}</div>`;
+        return s.name ? `<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${chipRow}</div>` : chipRow;
+      }).join('');
     } else if(isKondurType(t)){
       const expected=kondurExpectedSizes(t);
+      const series=t.subtypes.length>0?t.subtypes:[{name:null,sizes:t.directSizes}];
       const renderSizes=pool=>{
         const merged={...pool};
         return `<div class="rt-chip-row">${expected.map(sz=>kondurChip(sz,merged[sz]||0)).join('')}</div>`;
       };
-      body=t.subtypes.length>0
-        ?t.subtypes.map(s=>`<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${renderSizes(s.sizes)}</div>`).join('')
-        :renderSizes(t.directSizes);
+      body=idxs.map(i=>{
+        const s=series[i];
+        return s.name ? `<div style="margin-bottom:8px;"><div class="small-muted" style="margin-bottom:4px;font-size:11px;">${s.name}</div>${renderSizes(s.sizes)}</div>` : renderSizes(s.sizes);
+      }).join('');
     } else {
-      body=t.subtypes.length>0
-        ?t.subtypes.map(s=>`<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${Object.entries(s.sizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div></div>`).join('')
-        :`<div class="rt-chip-row">${Object.entries(t.directSizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('')}</div>`;
+      const series=t.subtypes.length>0?t.subtypes:[{name:null,sizes:t.directSizes}];
+      body=idxs.map(i=>{
+        const s=series[i];
+        const sizesHtml=Object.entries(s.sizes).map(([l,q])=>`<span class="rt-sz ${q>0?'ok':'zero'}">${l} (${q})</span>`).join('');
+        return s.name ? `<div class="rt-series"><span class="sname">${s.name}</span><div class="rt-sizes">${sizesHtml}</div></div>` : `<div class="rt-chip-row">${sizesHtml}</div>`;
+      }).join('');
     }
     const st=typeStatus(t);
     const borderClr=st==='red'?'#e57373':st==='yellow'?'#ffcc02':'#e4ddca';
