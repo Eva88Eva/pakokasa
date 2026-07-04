@@ -1914,14 +1914,20 @@ function renderOwnerView(){
         y:{ticks:{color:'#8a93a3',font:{size:11},callback:v=>v>=1000?(v/1000)+'k':v},grid:{color:'#f1ecd9'},beginAtZero:true}
       }
     };
+    function freshChart(ctx, config){
+      if(!ctx) return;
+      try{
+        const existing = window.Chart.getChart ? window.Chart.getChart(ctx) : null;
+        if(existing) existing.destroy();
+        new Chart(ctx, config);
+      }catch(err){ console.error('Грешка при цртање графикон ('+ctx.id+'):', err); }
+    }
 
     // Year months chart
-    const ctxY = document.getElementById('chartYearMonths');
-    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>(state.statYear===yearStr() && i===new Date().getMonth())?gold:goldLight),borderRadius:6}]},options:chartDefaults});
+    freshChart(document.getElementById('chartYearMonths'), {type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>(state.statYear===yearStr() && i===new Date().getMonth())?gold:goldLight),borderRadius:6}]},options:{...chartDefaults}});
 
     // Month days chart — clickable
-    const ctxM = document.getElementById('chartMonthDays');
-    if(ctxM) new Chart(ctxM,{type:'bar',data:{labels:s.monthDayLabels,datasets:[{data:s.monthDayData,backgroundColor:navy,borderRadius:4}]},options:{
+    freshChart(document.getElementById('chartMonthDays'), {type:'bar',data:{labels:s.monthDayLabels,datasets:[{data:s.monthDayData,backgroundColor:navy,borderRadius:4}]},options:{
       ...chartDefaults,
       onClick:(evt,elements)=>{ if(elements && elements.length>0){ openDayDetailModal(s.monthDayDates[elements[0].index]); } }
     }});
@@ -1929,8 +1935,7 @@ function renderOwnerView(){
     // All pie/doughnut charts
     pieCharts.forEach(cfg=>{
       const ctx = document.getElementById('canvas-'+cfg.id);
-      if(!ctx) return;
-      new Chart(ctx,{type:'doughnut',data:{labels:cfg.labels,datasets:[{data:cfg.values,backgroundColor:cfg.colors,borderWidth:2,borderColor:'#fff'}]},
+      freshChart(ctx, {type:'doughnut',data:{labels:cfg.labels,datasets:[{data:cfg.values,backgroundColor:cfg.colors,borderWidth:2,borderColor:'#fff'}]},
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:11,font:{size:11},color:'#5b6372'}}},
           onClick:()=>togglePie(cfg.id)}});
     });
