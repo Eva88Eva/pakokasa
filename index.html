@@ -148,6 +148,43 @@ table tr:hover td{background:#fcf9f0;}
 .btn.green{background:#3e7d5a;border-color:#3e7d5a;color:#fff;}
 .btn.green:hover{background:#2f6247;}
 
+/* ---------- OWNER REPORT ---------- */
+.owner-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1.5px solid #e4ddca;border-radius:12px;padding:12px 14px;margin-bottom:16px;}
+.owner-toolbar label{font-size:11.5px;font-weight:700;color:#5b6372;text-transform:uppercase;letter-spacing:.4px;margin-right:4px;}
+.owner-toolbar select{width:auto;padding:8px 30px 8px 10px;font-size:13.5px;min-width:0;}
+.owner-toolbar .spacer{flex:1;}
+.scope-toggle{display:inline-flex;border:1.5px solid #ddd4bd;border-radius:8px;overflow:hidden;}
+.scope-toggle button{padding:7px 12px;font-size:12.5px;font-weight:600;background:#fff;color:var(--navy);border:none;}
+.scope-toggle button.active{background:var(--gold);color:#2a2008;}
+.stat-box .val.sm{font-size:18px;}
+.stat-box .sub2{font-size:10.5px;color:var(--gold-light);margin-top:3px;}
+.stat-box.alt .sub2{color:var(--muted);}
+.cat-rev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:4px;}
+.cat-rev-box{background:#fffdf8;border:1.5px solid #e4ddca;border-radius:10px;padding:12px;text-align:center;}
+.cat-rev-box .ico{font-size:18px;margin-bottom:4px;}
+.cat-rev-box .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
+.cat-rev-box .val{font-size:15px;font-weight:700;color:var(--navy);font-family:'Playfair Display',serif;}
+.section-title{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;color:var(--navy);margin:26px 0 4px;padding-top:16px;border-top:2px solid var(--gold);}
+.section-title:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+.section-sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
+.pie-card .card-title{cursor:pointer;}
+.pie-card .card-title .hint{font-size:11px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;}
+.pie-detail-table{margin-top:10px;border-top:1px solid #f1ecd9;padding-top:10px;}
+.pie-detail-row{display:flex;justify-content:space-between;align-items:center;padding:5px 2px;font-size:13px;}
+.pie-detail-row .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;flex-shrink:0;}
+.pie-detail-row .nm{flex:1;color:var(--navy);}
+.pie-detail-row b{color:var(--navy);}
+.pie-detail-row .pct{color:var(--muted);font-size:11.5px;margin-left:6px;}
+.pie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;}
+.rank-list{list-style:none;}
+.rank-item{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #f1ecd9;}
+.rank-item:last-child{border-bottom:none;}
+.rank-num{width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.rank-item:nth-child(1) .rank-num{background:var(--gold);color:#2a2008;}
+.rank-nm{flex:1;font-size:13.5px;color:var(--navy);font-weight:600;}
+.rank-val{font-weight:700;color:var(--navy);font-size:14px;}
+.click-hint{font-size:11px;color:var(--muted);text-align:center;margin-top:6px;}
+
 .small-muted{font-size:12.5px;color:var(--muted);}
 .flexbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
 .deposit-row{border:1.5px solid #e4ddca;border-radius:10px;padding:14px;margin-bottom:12px;}
@@ -422,11 +459,14 @@ let state = {
   view:'sale', sidebarOpen:false, cart:[],
   customerName:'', customerPhone:'', customerComment:'', noContact:false, paymentType:'paid', depositAmount:'', discountAmount:'', saleDate: todayStr(),
   ownerUnlocked:false, pinEntry:'', custSearch:'',
-  ownerYear: new Date().getFullYear().toString(), ownerMonth: new Date().getMonth()+1,
   kasaDate: todayStr(), kasaBreakdown: false, robaCat:null, robaTekCat:null, robaTekFilter:'all', robaTekSearch:'', robaOpen: new Set(), robaSearch:'', saleSearch:'', saleCat:null,
   picker:null, /* {typeId, subId, subSearch, size, qty} */
-  saleSelect:{} // typeId -> {subId, size, qty}
+  saleSelect:{}, // typeId -> {subId, size, qty}
+  statYear: yearStr(), statMonth: String(new Date().getMonth()+1).padStart(2,'0'),
+  reportScope: 'month', // 'month' | 'year' — applies to all breakdown pie charts
+  pieOpen: {} // chart id -> bool (show detail table)
 };
+
 function ensureSaleSelect(typeId){ if(!state.saleSelect[typeId]) state.saleSelect[typeId]={subId:'',size:'',qty:1}; return state.saleSelect[typeId]; }
 
 function toast(msg, type){
@@ -684,147 +724,161 @@ async function setSimpleQty(typeId, val){
 }
 
 /* ======================= OWNER STATS ======================= */
-// Одредува во која "промет по категорија" група спаѓа одреден артикл
-function revenueCategoryBucket(t, itemName){
-  const cat = ((t && t.category) || '').toLowerCase();
-  const name = (itemName || (t && t.name) || '').toLowerCase();
+/* ---------- REVENUE BUCKET HELPERS ---------- */
+// Групирање на секој артикл во една од 6-те барани категории за промет.
+function bucketForItem(it){
+  const t = getType(it.typeId);
+  const cat = (t && t.category ? t.category : '').toLowerCase();
+  const name = (t && t.name ? t.name : (it.name||'')).toLowerCase();
   if(cat.includes('одел')) return 'Одела';
   if(cat.includes('кошул')) return 'Кошули';
-  if(cat.includes('обувк') || cat.includes('кондур') || cat.includes('патик')) return 'Кондури';
-  if(name.includes('лептир') || (name.includes('крават') && !name.includes('кутија'))) return 'Вратоврски';
-  if(name.includes('каиш')) return 'Каиши';
-  return 'Разни производи';
+  if(name.includes('кондур')) return 'Кондури';
+  if(name.includes('крават')) return 'Кравати';
+  if(name.includes('каиш')) return 'Каиш';
+  return 'Разно';
 }
-const REVENUE_CATEGORY_ORDER = ['Одела','Кошули','Кондури','Вратоврски','Каиши','Разни производи'];
+const REV_BUCKETS = ['Одела','Кошули','Кондури','Кравати','Каиш','Разно'];
+const BUCKET_ICO = {'Одела':'&#128084;','Кошули':'&#128085;','Кондури':'&#128095;','Кравати':'&#128065;','Каиш':'&#128218;','Разно':'&#9986;'};
+// точна пропорционална вредност на еден артикл во продажба (пресметан попуст сразмерно)
+function itemRevenue(sale, it){
+  const raw = it.price*it.qty;
+  if(!sale.rawTotal) return raw;
+  const ratio = sale.total/sale.rawTotal;
+  return raw*ratio;
+}
+// продажби во дадениот месец (YYYY-MM)
+function salesInMonth(ym){ return DB.sales.filter(s=>s.date.slice(0,7)===ym); }
+// продажби во дадената година (YYYY)
+function salesInYear(y){ return DB.sales.filter(s=>s.date.slice(0,4)===y); }
+// продажби според тековниот избран опсег (месец/година) во извештајот
+function salesInReportScope(){
+  const ym = state.statYear+'-'+state.statMonth;
+  return state.reportScope==='year' ? salesInYear(state.statYear) : salesInMonth(ym);
+}
+// вистински паричен промет (капари + доплати + целосно платено) за листа продажби, во период
+function cashFlowForPeriod(matchFn){
+  let sum=0;
+  DB.sales.forEach(s=>{ if(matchFn(s.date.slice(0,10))) sum+=s.paidNow; });
+  DB.deposits.forEach(d=>d.history.forEach(h=>{ if(h.note!=='Капар при продажба' && matchFn(h.date.slice(0,10))) sum+=h.amount; }));
+  return sum;
+}
 
-function computeStats(selYear, selMonth){
-  const y = selYear || yearStr(), m = selMonth || monthStr();
-  // Вкупен промет од продажби = целата вредност на направените продажби (без разлика дали се целосно исплатени)
-  let yearRevTotal=0, monthRevTotal=0;
-  // Моментален паричен промет = реалните пари влезени во дуќанот (капари + доплати + целосни исплати)
-  let yearRevCash=0, monthRevCash=0;
+function computeStats(){
+  const y = state.statYear, m = state.statMonth, ym = y+'-'+m;
+  const monthSales = salesInMonth(ym);
+  const yearSales = salesInYear(y);
+
+  // --- Промет: вкупни продажби (без разлика на статус) ---
+  const monthRevTotal = monthSales.reduce((s,x)=>s+x.total,0);
+  const yearRevTotal = yearSales.reduce((s,x)=>s+x.total,0);
+  // --- Моментален паричен промет (реално примени пари: капари+доплати+платено) ---
+  const monthCash = cashFlowForPeriod(d=>d.slice(0,7)===ym);
+  const yearCash = cashFlowForPeriod(d=>d.slice(0,4)===y);
+
+  // --- Продадени одела (месец) ---
   let suitsSold=0;
-  const typeCounts={}, detailCounts={};
-  const revenueByDate={}; // date -> паричен промет (реален прилив)
-  const revenueByMonth={}; // YYYY-MM -> паричен промет (реален прилив, за избраната година)
-  const subtypeSalesByType={}; // typeId -> { typeLabel, data: {subName: qty} }
-  const catBest={};
-  // Промет по категорија (Одела, Кошули, Кондури, Вратоврски, Каиши, Разни производи) за избраниот месец — вкупна вредност на продадени артикли
-  const categoryRevenue={}; REVENUE_CATEGORY_ORDER.forEach(c=>categoryRevenue[c]=0);
+  monthSales.forEach(s=>s.items.forEach(it=>{ const t=getType(it.typeId); if(t && isOdeloType(t)) suitsSold+=it.qty; }));
 
-  // Customer new vs returning for selected month
-  // A customer is "new" for month M if their first purchase is in M
-  // "returning" if they had any purchase before M
-  const custFirstSale = {}; // custId -> earliest sale date
-  const custSalesInMonth = new Set();
-  const custNewInMonth = new Set();
-  const custReturningInMonth = new Set();
+  // --- Промет по категорија (6 групи) за месецот ---
+  const catRevenue = {}; REV_BUCKETS.forEach(b=>catRevenue[b]=0);
+  monthSales.forEach(s=>s.items.forEach(it=>{ catRevenue[bucketForItem(it)] += itemRevenue(s,it); }));
 
-  // Sort sales by date to determine first purchase
-  const sortedSales = [...DB.sales].sort((a,b)=>a.date.localeCompare(b.date));
-  sortedSales.forEach(s=>{
-    if(s.customerId){
-      if(!custFirstSale[s.customerId]) custFirstSale[s.customerId] = s.date.slice(0,7);
-    }
-  });
-
-  DB.sales.forEach(s=>{
-    const sMonth = s.date.slice(0,7);
-    const sYear = s.date.slice(0,4);
-    // Вкупен промет од продажби — целата вредност на продажбата, без разлика на статусот на плаќање
-    if(sYear===y) yearRevTotal+=s.total;
-    if(sMonth===m) monthRevTotal+=s.total;
-    // Моментален паричен промет — само она што реално е платено во моментот на продажбата (капар или целосна исплата)
-    const paidNow = (typeof s.paidNow==='number') ? s.paidNow : s.total;
-    if(sYear===y) yearRevCash+=paidNow;
-    if(sMonth===m) monthRevCash+=paidNow;
-    const d = s.date.slice(0,10);
-    revenueByDate[d] = (revenueByDate[d]||0)+paidNow;
-    if(sYear===y) revenueByMonth[sMonth] = (revenueByMonth[sMonth]||0)+paidNow;
-
-    // Customer tracking for current month
-    if(sMonth===m && s.customerId){
-      custSalesInMonth.add(s.customerId);
-      if(custFirstSale[s.customerId]===m) custNewInMonth.add(s.customerId);
-      else custReturningInMonth.add(s.customerId);
-    }
-
-    s.items.forEach(it=>{
-      const t = getType(it.typeId);
-      const tname = t ? (t.name+' '+t.price) : it.name;
-      typeCounts[tname]=(typeCounts[tname]||0)+it.qty;
-      if(t && isOdeloType(t)) suitsSold+=it.qty;
-      detailCounts[it.name]=(detailCounts[it.name]||0)+it.qty;
-
-      if(t && t.sized){
-        if(!subtypeSalesByType[t.id]) subtypeSalesByType[t.id] = {typeLabel: t.name+' '+fmt(t.price).replace(' ден',''), data:{}};
-        let subLabel;
-        if(it.subId){ const sub = getSubtype(t.id, it.subId); subLabel = (sub?sub.name:'—'); }
-        else { subLabel = it.size || '—'; }
-        subtypeSalesByType[t.id].data[subLabel] = (subtypeSalesByType[t.id].data[subLabel]||0)+it.qty;
-      }
-      if(t){
-        if(!catBest[t.category]) catBest[t.category]={};
-        const lbl = t.name+' '+t.price;
-        catBest[t.category][lbl] = (catBest[t.category][lbl]||0)+it.qty;
-      }
-      // Промет по категорија (Одела/Кошули/Кондури/Вратоврски/Каиши/Разни производи) — за избраниот месец, вкупна вредност на продадени артикли
-      if(sMonth===m){
-        const bucket = revenueCategoryBucket(t, it.name);
-        categoryRevenue[bucket] = (categoryRevenue[bucket]||0) + it.price*it.qty;
-      }
-    });
-  });
-
-  // Доплати на капар (и сите други последователни уплати) — реален паричен прилив на денот кога навистина се примени, без разлика кога е направена оригиналната продажба
-  DB.deposits.forEach(dep=>{
-    (dep.history||[]).forEach(h=>{
-      if(h.note==='Капар при продажба') return; // овој дел веќе е пресметан преку s.paidNow погоре
-      const hYear = h.date.slice(0,4);
-      const hMonth = h.date.slice(0,7);
-      if(hYear===y) yearRevCash += h.amount;
-      if(hMonth===m) monthRevCash += h.amount;
-      const hd = h.date.slice(0,10);
-      revenueByDate[hd] = (revenueByDate[hd]||0) + h.amount;
-      if(hYear===y) revenueByMonth[hMonth] = (revenueByMonth[hMonth]||0) + h.amount;
-    });
-  });
-
-  const topTypes = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const topDetail = Object.entries(detailCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const returning = DB.customers.filter(c=>c.purchases>1).length;
-
-  let bestDay=null, bestDayRev=0;
-  Object.entries(revenueByDate).forEach(([d,r])=>{ if(r>bestDayRev){bestDayRev=r;bestDay=d;} });
-
-  const bestPerCategory = {};
-  Object.entries(catBest).forEach(([cat,counts])=>{
-    const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-    bestPerCategory[cat] = sorted[0] || null;
-  });
-
-  // current month days array — revenue
-  const daysInMonth = new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7)), 0).getDate();
-  const monthDayLabels = []; const monthDayData = [];
-  for(let d=1; d<=daysInMonth; d++){
-    const ds = m + '-' + String(d).padStart(2,'0');
-    monthDayLabels.push(String(d));
-    monthDayData.push(revenueByDate[ds]||0);
-  }
-  // year months array — revenue
+  // --- Промет по месец за избраната година (bar chart) ---
   const monthNames = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
+  const revenueByMonth = {};
+  yearSales.forEach(s=>{ const mm=s.date.slice(0,7); revenueByMonth[mm]=(revenueByMonth[mm]||0)+s.total; });
   const yearMonthLabels = monthNames;
-  const yearMonthData = monthNames.map((_,i)=>{
-    const mm = y+'-'+String(i+1).padStart(2,'0');
-    return revenueByMonth[mm]||0;
+  const yearMonthData = monthNames.map((_,i)=>{ const mm=y+'-'+String(i+1).padStart(2,'0'); return revenueByMonth[mm]||0; });
+
+  // --- Промет по ден за избраниот месец (bar chart, кликлив) ---
+  const revenueByDate = {};
+  monthSales.forEach(s=>{ const d=s.date.slice(0,10); revenueByDate[d]=(revenueByDate[d]||0)+s.total; });
+  const daysInMonth = new Date(parseInt(y), parseInt(m), 0).getDate();
+  const monthDayLabels = [], monthDayData = [], monthDayDates = [];
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = ym + '-' + String(d).padStart(2,'0');
+    monthDayLabels.push(String(d)); monthDayData.push(revenueByDate[ds]||0); monthDayDates.push(ds);
+  }
+
+  // --- Опсег (месец/година) за pie-графиконите ---
+  const scopeSales = salesInReportScope();
+
+  // --- Смокинг: pie по подтип (шал/шпиц/итн.) ---
+  const smokingData = {};
+  scopeSales.forEach(s=>s.items.forEach(it=>{
+    const t=getType(it.typeId);
+    if(!t || !isOdeloType(t) || !t.name.toLowerCase().includes('смокинг')) return;
+    const sub = it.subId ? getSubtype(t.id,it.subId) : null;
+    const lbl = sub ? sub.name : (it.size||'без подтип');
+    smokingData[lbl]=(smokingData[lbl]||0)+it.qty;
+  }));
+
+  // --- Одело: ранг листа на подтипови + pie по тип/цена ---
+  const odeloSubtypeRank = {}, odeloTypeData = {};
+  scopeSales.forEach(s=>s.items.forEach(it=>{
+    const t=getType(it.typeId);
+    if(!t || !isOdeloType(t)) return;
+    odeloTypeData[t.name+' '+fmt(t.price).replace(' ден','')] = (odeloTypeData[t.name+' '+fmt(t.price).replace(' ден','')]||0)+it.qty;
+    const sub = it.subId ? getSubtype(t.id,it.subId) : null;
+    const lbl = sub ? (t.name+' — '+sub.name) : (t.name+(it.size?' ('+it.size+')':''));
+    odeloSubtypeRank[lbl] = (odeloSubtypeRank[lbl]||0)+it.qty;
+  }));
+  const odeloRankList = Object.entries(odeloSubtypeRank).sort((a,b)=>b[1]-a[1]).slice(0,12);
+
+  // --- Кошули: pie по тип/цена + pie по подтип (големини) за секој подтип ---
+  const kosulaTypeData = {};
+  const kosulaSubtypeSizes = {}; // subtype name -> {size: qty}
+  scopeSales.forEach(s=>s.items.forEach(it=>{
+    const t=getType(it.typeId);
+    if(!t || !isKosulaType(t)) return;
+    kosulaTypeData[t.name+' '+fmt(t.price).replace(' ден','')] = (kosulaTypeData[t.name+' '+fmt(t.price).replace(' ден','')]||0)+it.qty;
+    const sub = it.subId ? getSubtype(t.id,it.subId) : null;
+    const subLbl = sub ? sub.name : (t.name+' '+fmt(t.price).replace(' ден',''));
+    const sizeLbl = it.size || 'без број';
+    if(!kosulaSubtypeSizes[subLbl]) kosulaSubtypeSizes[subLbl] = {};
+    kosulaSubtypeSizes[subLbl][sizeLbl] = (kosulaSubtypeSizes[subLbl][sizeLbl]||0)+it.qty;
+  }));
+
+  // --- Кондури / Патики: pie по подтип (стил/боја), без бројки ---
+  const kondurSubtypeData = {}, patikiSubtypeData = {};
+  scopeSales.forEach(s=>s.items.forEach(it=>{
+    const t=getType(it.typeId);
+    if(!t || !isKondurType(t)) return;
+    const nm=(t.name||'').toLowerCase();
+    const sub = it.subId ? getSubtype(t.id,it.subId) : null;
+    const lbl = sub ? sub.name : (it.size||'без подтип');
+    if(nm.includes('патик')) patikiSubtypeData[lbl]=(patikiSubtypeData[lbl]||0)+it.qty;
+    else kondurSubtypeData[lbl]=(kondurSubtypeData[lbl]||0)+it.qty;
+  }));
+
+  // --- Најпродавани типови (по количина, 6-те групи) ---
+  const bucketQty = {}; REV_BUCKETS.forEach(b=>bucketQty[b]=0);
+  scopeSales.forEach(s=>s.items.forEach(it=>{ bucketQty[bucketForItem(it)]+=it.qty; }));
+
+  // --- Топ конкретни ставки (задржано) ---
+  const detailCounts={};
+  scopeSales.forEach(s=>s.items.forEach(it=>{ detailCounts[it.name]=(detailCounts[it.name]||0)+it.qty; }));
+  const topDetail = Object.entries(detailCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // --- Муштерии за месецот ---
+  const custTotal = monthSales.length; // вкупно продажби во месецот (вклучувајќи без контакт)
+  let suitBuyersNew=0, suitBuyersReturning=0, suitBuyersNoContact=0, suitBuyersTotal=0;
+  monthSales.forEach(s=>{
+    const hasOdelo = s.items.some(it=>{ const t=getType(it.typeId); return t && isOdeloType(t); });
+    if(!hasOdelo) return;
+    suitBuyersTotal++;
+    if(!s.customerId){ suitBuyersNoContact++; return; }
+    const cust = DB.customers.find(c=>c.id===s.customerId);
+    if(cust && cust.purchases>1) suitBuyersReturning++; else suitBuyersNew++;
   });
 
-  const categoryRevenueList = REVENUE_CATEGORY_ORDER.map(c=>[c, categoryRevenue[c]||0]);
-
-  return {yearRevTotal, monthRevTotal, yearRevCash, monthRevCash, suitsSold, returning, topTypes, topDetail,
-    bestDay, bestDayRev, bestPerCategory, subtypeSalesByType, categoryRevenueList,
-    monthDayLabels, monthDayData, yearMonthLabels, yearMonthData,
-    custTotal: custSalesInMonth.size, custNew: custNewInMonth.size, custReturning: custReturningInMonth.size};
+  return {
+    monthRevTotal, yearRevTotal, monthCash, yearCash, suitsSold, catRevenue,
+    yearMonthLabels, yearMonthData, monthDayLabels, monthDayData, monthDayDates,
+    smokingData, odeloRankList, odeloTypeData, kosulaTypeData, kosulaSubtypeSizes,
+    kondurSubtypeData, patikiSubtypeData, bucketQty, topDetail,
+    custTotal, suitBuyersTotal, suitBuyersNew, suitBuyersReturning, suitBuyersNoContact
+  };
 }
 
 /* ======================= RENDER ======================= */
@@ -1662,117 +1716,181 @@ function pinPress(n){
 function pinBack(){ state.pinEntry = state.pinEntry.slice(0,-1); render(); }
 
 /* ---------- OWNER STATS ---------- */
-function ownerAvailableYears(){
-  const years = new Set([new Date().getFullYear().toString()]);
-  DB.sales.forEach(s=>years.add(s.date.slice(0,4)));
-  DB.deposits.forEach(d=>(d.history||[]).forEach(h=>years.add(h.date.slice(0,4))));
-  return [...years].sort((a,b)=>b.localeCompare(a));
+const PIE_PALETTE = ['#b08d4e','#101b2d','#5f8f6e','#c0594b','#c79a3a','#7c93b3','#8a5a44','#3f6b6d','#9b6bb3','#d9bb7e','#4a7c94','#a3623f'];
+
+function setStatYear(v){ state.statYear=v; render(); }
+function setStatMonth(v){ state.statMonth=v; render(); }
+function setReportScope(v){ state.reportScope=v; render(); }
+function togglePie(id){ state.pieOpen[id]=!state.pieOpen[id]; render(); }
+
+// Build a pie/doughnut card. Pushes chart-draw config into `collector` if there is data.
+function renderPieCard(id, title, dataObj, collector){
+  const entries = Object.entries(dataObj||{}).sort((a,b)=>b[1]-a[1]);
+  const total = entries.reduce((s,[,v])=>s+v,0);
+  if(entries.length===0 || total===0){
+    return `<div class="card"><div class="card-title">${title}</div><div class="small-muted">Нема податоци за избраниот период.</div></div>`;
+  }
+  const open = !!state.pieOpen[id];
+  const colors = entries.map((_,i)=>PIE_PALETTE[i%PIE_PALETTE.length]);
+  collector.push({id, labels:entries.map(e=>e[0]), values:entries.map(e=>e[1]), colors});
+  const detailRows = entries.map(([lbl,v],i)=>`
+    <div class="pie-detail-row">
+      <span class="sw" style="background:${colors[i]};"></span><span class="nm">${lbl}</span>
+      <span><b>${v}</b><span class="pct">${Math.round(v/total*100)}%</span></span>
+    </div>`).join('');
+  return `<div class="card pie-card">
+    <div class="card-title" onclick="togglePie('${id}')">${title}<span class="hint">${open?'▲ сокриј бројки':'▼ кликни за бројки'}</span></div>
+    <div class="chart-wrap"><canvas id="canvas-${id}"></canvas></div>
+    ${open ? `<div class="pie-detail-table">${detailRows}</div>` : ''}
+  </div>`;
 }
 
-function setOwnerPeriod(field, val){
-  state[field] = field==='ownerMonth' ? parseInt(val) : val;
-  render();
+function openDayDetailModal(dateStr){
+  const list = kasaSalesForDate(dateStr);
+  const doplati = kasaDoplatiForDate(dateStr);
+  const cash = kasaCashForDate(dateStr);
+  const displayDate = new Date(dateStr+'T12:00:00').toLocaleDateString('mk-MK',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  showModal(`
+    <h3>${displayDate}</h3>
+    <p class="small-muted" style="margin-bottom:14px;">Паричен промет тој ден: <b>${fmt(cash)}</b> &middot; Продажби: <b>${list.length}</b> &middot; Доплати: <b>${doplati.length}</b></p>
+    ${list.length===0 ? '<div class="small-muted">Нема продажби тој ден.</div>' : `<table><thead><tr><th>Време</th><th>Муштерија</th><th>Артикли</th><th>Вкупно</th><th>Статус</th></tr></thead><tbody>
+      ${list.map(s=>`<tr>
+        <td>${new Date(s.date).toLocaleTimeString('mk-MK',{hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${s.customerName||'—'}</td>
+        <td style="font-size:12px;">${s.items.map(i=>i.name+' ×'+i.qty).join(', ')}</td>
+        <td><b>${fmt(s.total)}</b></td>
+        <td>${s.paymentType==='paid'?'<span class="pill paid">Платено</span>':'<span class="pill deposit">Капар '+fmt(s.paidNow)+'</span>'}</td>
+      </tr>`).join('')}
+    </tbody></table>`}
+    ${doplati.length>0 ? `<div style="margin-top:14px;"><b style="font-size:13px;color:var(--navy);">Доплати на капар</b>
+      <table><thead><tr><th>Време</th><th>Муштерија</th><th>Сума</th></tr></thead><tbody>
+      ${doplati.map(h=>`<tr><td>${new Date(h.date).toLocaleTimeString('mk-MK',{hour:'2-digit',minute:'2-digit'})}</td><td>${h.customerName}</td><td><b>${fmt(h.amount)}</b></td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+    <button class="btn outline block" style="margin-top:14px;" onclick="closeModal()">Затвори</button>
+  `);
 }
 
 function renderOwnerView(){
+  const s = computeStats();
   const mn = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
-  const selYear = state.ownerYear || new Date().getFullYear().toString();
-  const selMonthNum = state.ownerMonth || (new Date().getMonth()+1);
-  const selMonth = selYear + '-' + String(selMonthNum).padStart(2,'0');
-  const s = computeStats(selYear, selMonth);
-  const curMonthName = mn[selMonthNum-1] + ' ' + selYear;
-  const years = ownerAvailableYears();
+  const monthLabel = mn[parseInt(state.statMonth)-1] || '';
+  const monthName = monthLabel+' '+state.statYear;
+  const yearsSet = new Set(DB.sales.map(x=>x.date.slice(0,4)));
+  yearsSet.add(yearStr());
+  yearsSet.add(state.statYear);
+  const years = [...yearsSet].sort((a,b)=>b.localeCompare(a));
+  const scopeLabel = state.reportScope==='year' ? ('годината '+state.statYear) : monthName;
 
-  // Build type+subtype chart cards HTML
-  let typeChartCards = '';
-  Object.values(s.subtypeSalesByType).forEach((entry,i)=>{
-    const labels = Object.keys(entry.data);
-    const vals = Object.values(entry.data);
-    if(labels.length===0) return;
-    typeChartCards += `
-      <div class="card">
-        <div class="card-title">${entry.typeLabel} — продажба по подтип/број (${curMonthName})</div>
-        <div class="chart-wrap"><canvas id="chartType${i}"></canvas></div>
-      </div>`;
-  });
+  const pieCharts = []; // collector for chart-draw configs
 
-  const periodPicker = `
-    <div class="card" style="margin-top:14px;">
-      <div class="card-title" style="margin-bottom:10px;">Период за извештајот</div>
-      <div class="row2">
-        <div class="field" style="margin:0;">
-          <label class="fl">Месец</label>
-          <select onchange="setOwnerPeriod('ownerMonth', this.value)">
-            ${mn.map((name,i)=>`<option value="${i+1}" ${selMonthNum===i+1?'selected':''}>${name}</option>`).join('')}
-          </select>
-        </div>
-        <div class="field" style="margin:0;">
-          <label class="fl">Година</label>
-          <select onchange="setOwnerPeriod('ownerYear', this.value)">
-            ${years.map(yy=>`<option value="${yy}" ${selYear===yy?'selected':''}>${yy}</option>`).join('')}
-          </select>
-        </div>
-      </div>
-    </div>`;
-
-  const categoryRevenueCard = `
-    <div class="card">
-      <div class="card-title">Промет по категорија — ${curMonthName}</div>
-      <table><thead><tr><th>Категорија</th><th>Промет</th></tr></thead><tbody>
-        ${s.categoryRevenueList.map(([k,v])=>`<tr><td>${k}</td><td><b>${fmt(v)}</b></td></tr>`).join('')}
-      </tbody></table>
-      <div class="small-muted" style="margin-top:8px;">Вредноста ги опфаќа сите продажби направени во месецот (без разлика дали се целосно исплатени).</div>
-    </div>`;
+  // ---- Кошули: pie по подтип (големини) за секој подтип ----
+  const kosulaSubtypeCards = Object.entries(s.kosulaSubtypeSizes)
+    .sort((a,b)=>Object.values(b[1]).reduce((x,y)=>x+y,0)-Object.values(a[1]).reduce((x,y)=>x+y,0))
+    .map(([subName,sizes],i)=>renderPieCard('kosula-sub-'+i, 'Кошули — '+subName+' (по број/големина)', sizes, pieCharts))
+    .join('');
 
   const html = `
     <h2>Извештај за сопственик</h2>
     <div class="flexbar"><div class="sub">Целосен преглед на промет и продажба</div><button class="btn outline sm" onclick="state.ownerUnlocked=false;render()">Заклучи</button></div>
 
-    ${periodPicker}
-
-    <div class="card" style="margin-top:14px;">
-      <div class="card-title" style="margin-bottom:10px;">Вкупен промет од продажби</div>
-      <div class="small-muted" style="margin-bottom:10px;">Вредноста на сите направени продажби, без разлика дали се целосно исплатени (вклучува и неисплатен остаток кај капари).</div>
-      <div class="stat-grid" style="margin-bottom:0;">
-        <div class="stat-box"><div class="lbl">${selYear} (година)</div><div class="val">${fmt(s.yearRevTotal)}</div></div>
-        <div class="stat-box"><div class="lbl">${curMonthName}</div><div class="val">${fmt(s.monthRevTotal)}</div></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="margin-bottom:10px;">Моментален паричен промет</div>
-      <div class="small-muted" style="margin-bottom:10px;">Реални пари влезени во дуќанот: капари, доплати и целосно платени продажби.</div>
-      <div class="stat-grid" style="margin-bottom:0;">
-        <div class="stat-box alt"><div class="lbl">${selYear} (година)</div><div class="val">${fmt(s.yearRevCash)}</div></div>
-        <div class="stat-box alt"><div class="lbl">${curMonthName}</div><div class="val">${fmt(s.monthRevCash)}</div></div>
+    <div class="owner-toolbar">
+      <label>Месец</label>
+      <select onchange="setStatMonth(this.value)">
+        ${mn.map((n,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${state.statMonth===String(i+1).padStart(2,'0')?'selected':''}>${n}</option>`).join('')}
+      </select>
+      <label>Година</label>
+      <select onchange="setStatYear(this.value)">
+        ${years.map(y=>`<option value="${y}" ${state.statYear===y?'selected':''}>${y}</option>`).join('')}
+      </select>
+      <div class="spacer"></div>
+      <label style="margin-right:0;">Графици по:</label>
+      <div class="scope-toggle">
+        <button class="${state.reportScope==='month'?'active':''}" onclick="setReportScope('month')">Месец</button>
+        <button class="${state.reportScope==='year'?'active':''}" onclick="setReportScope('year')">Година</button>
       </div>
     </div>
 
     <div class="stat-grid">
-      <div class="stat-box alt"><div class="lbl">Продадени одела (${curMonthName})</div><div class="val">${s.suitsSold}</div></div>
-      <div class="stat-box alt"><div class="lbl">Постојани муштерии</div><div class="val">${s.returning}</div></div>
+      <div class="stat-box"><div class="lbl">Промет — вкупни продажби (${monthName})</div><div class="val sm">${fmt(s.monthRevTotal)}</div></div>
+      <div class="stat-box"><div class="lbl">Моментален паричен промет (${monthName})</div><div class="val sm">${fmt(s.monthCash)}</div><div class="sub2">реално примени пари (капари, доплати, платено)</div></div>
+      <div class="stat-box alt"><div class="lbl">Продадени одела (${monthName})</div><div class="val">${s.suitsSold}</div></div>
+    </div>
+    <div class="stat-grid" style="margin-top:10px;">
+      <div class="stat-box alt"><div class="lbl">Промет годишно — вкупни продажби (${state.statYear})</div><div class="val sm">${fmt(s.yearRevTotal)}</div></div>
+      <div class="stat-box alt"><div class="lbl">Моментален паричен промет годишно (${state.statYear})</div><div class="val sm">${fmt(s.yearCash)}</div></div>
     </div>
 
-    ${categoryRevenueCard}
+    <div class="card" style="margin-top:18px;">
+      <div class="card-title">Промет по категорија — ${monthName} (вкупни продажби, ден)</div>
+      <div class="cat-rev-grid">
+        ${REV_BUCKETS.map(b=>`<div class="cat-rev-box"><div class="ico">${BUCKET_ICO[b]}</div><div class="lbl">${b}</div><div class="val">${fmt(s.catRevenue[b])}</div></div>`).join('')}
+      </div>
+    </div>
 
     <div class="card">
-      <div class="card-title">Паричен промет по месец — ${selYear} (ден)</div>
+      <div class="card-title">Промет по месец — ${state.statYear} (ден)</div>
       <div class="chart-wrap tall"><canvas id="chartYearMonths"></canvas></div>
     </div>
 
     <div class="card">
-      <div class="card-title">Паричен промет по ден — ${curMonthName} (ден)</div>
+      <div class="card-title">Промет по ден — ${monthName} (ден)</div>
       <div class="chart-wrap tall"><canvas id="chartMonthDays"></canvas></div>
+      <div class="click-hint">Кликни на колона за да ги видиш продажбите тој ден</div>
     </div>
 
-    ${typeChartCards || '<div class="card"><div class="small-muted">Нема доволно продажби за приказ по тип/подтип.</div></div>'}
+    <div class="section-title">Одела</div>
+    <div class="section-sub">Статистики за ${scopeLabel}</div>
+    <div class="pie-grid">
+      <div class="card">
+        <div class="card-title">Најпродавани подтипови одела — ранг листа</div>
+        ${s.odeloRankList.length===0 ? '<div class="small-muted">Нема податоци за избраниот период.</div>' : `
+        <ul class="rank-list">${s.odeloRankList.map(([lbl,v],i)=>`<li class="rank-item"><span class="rank-num">${i+1}</span><span class="rank-nm">${lbl}</span><span class="rank-val">${v}</span></li>`).join('')}</ul>`}
+      </div>
+      ${renderPieCard('odelo-type', 'Одела по тип/цена', s.odeloTypeData, pieCharts)}
+    </div>
+
+    <div class="section-title">Смокинг</div>
+    <div class="section-sub">Распределба по подтип (шал, шпиц...) за ${scopeLabel}</div>
+    ${renderPieCard('smoking', 'Смокинг — продажба по подтип', s.smokingData, pieCharts)}
+
+    <div class="section-title">Кошули</div>
+    <div class="section-sub">Статистики за ${scopeLabel}</div>
+    <div class="pie-grid">
+      ${renderPieCard('kosula-type', 'Кошули по тип/цена', s.kosulaTypeData, pieCharts)}
+    </div>
+    <div class="pie-grid" style="margin-top:16px;">
+      ${kosulaSubtypeCards || '<div class="card"><div class="small-muted">Нема доволно податоци за приказ по подтип.</div></div>'}
+    </div>
+
+    <div class="section-title">Кондури и патики</div>
+    <div class="section-sub">Распределба по подтип/стил за ${scopeLabel}</div>
+    <div class="pie-grid">
+      ${renderPieCard('kondur', 'Кондури — по подтип', s.kondurSubtypeData, pieCharts)}
+      ${renderPieCard('patiki', 'Патики — по подтип', s.patikiSubtypeData, pieCharts)}
+    </div>
+
+    <div class="section-title">Најпродавани типови</div>
+    <div class="section-sub">Кои категории најмногу ги бараат муштериите — ${scopeLabel}</div>
+    ${renderPieCard('bucket-qty', 'Најпродавани типови (по количина)', s.bucketQty, pieCharts)}
 
     <div class="card">
-      <div class="card-title">Муштерии за ${curMonthName}</div>
+      <div class="card-title">Најпродавани конкретни ставки — ${scopeLabel}</div>
+      ${s.topDetail.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Ставка</th><th>Продадено</th></tr></thead><tbody>${s.topDetail.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
+    </div>
+
+    <div class="section-title">Муштерии за ${monthName}</div>
+    <div class="card">
       <div class="stat-grid" style="margin-bottom:0;">
-        <div class="stat-box alt"><div class="lbl">Вкупно со купување</div><div class="val">${s.custTotal}</div></div>
-        <div class="stat-box alt"><div class="lbl">Нови муштерии</div><div class="val" style="color:var(--success)">${s.custNew}</div></div>
-        <div class="stat-box alt"><div class="lbl">Повратни купувачи</div><div class="val" style="color:var(--gold)">${s.custReturning}</div></div>
+        <div class="stat-box alt"><div class="lbl">Вкупно со купување</div><div class="val">${s.custTotal}</div><div class="sub2">сите продажби во месецот, вкл. без контакт</div></div>
+      </div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1ecd9;">
+        <div class="card-title" style="margin-bottom:10px;">Купувачи на одело — ${monthName}</div>
+        <div class="stat-grid" style="margin-bottom:0;">
+          <div class="stat-box alt"><div class="lbl">Вкупно купувања одело</div><div class="val">${s.suitBuyersTotal}</div></div>
+          <div class="stat-box alt"><div class="lbl">Нови муштерии</div><div class="val" style="color:var(--success)">${s.suitBuyersNew}</div></div>
+          <div class="stat-box alt"><div class="lbl">Повратни купувачи</div><div class="val" style="color:var(--gold)">${s.suitBuyersReturning}</div></div>
+          <div class="stat-box alt"><div class="lbl">Без оставен контакт</div><div class="val" style="color:var(--muted)">${s.suitBuyersNoContact}</div></div>
+        </div>
       </div>
       <div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1ecd9;">
         <div class="card-title" style="margin-bottom:10px;">База на муштерии (вкупно: ${DB.customers.length})</div>
@@ -1780,14 +1898,6 @@ function renderOwnerView(){
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">Најпродавани типови (${curMonthName})</div>
-      ${s.topTypes.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Тип</th><th>Продадено</th></tr></thead><tbody>${s.topTypes.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
-    </div>
-    <div class="card">
-      <div class="card-title">Најпродавани конкретни ставки (${curMonthName})</div>
-      ${s.topDetail.length===0?`<div class="small-muted">Нема податоци.</div>`:`<table><thead><tr><th>Ставка</th><th>Продадено</th></tr></thead><tbody>${s.topDetail.map(([k,v])=>`<tr><td>${k}</td><td><b>${v}</b></td></tr>`).join('')}</tbody></table>`}
-    </div>
     <div class="card">
       <div class="card-title">Промени ПИН</div>
       <div class="row2"><input type="password" id="newPin" placeholder="нов 4-цифрен ПИН" maxlength="4"><button class="btn outline" onclick="changePin()">Сними нов ПИН</button></div>
@@ -1807,19 +1917,22 @@ function renderOwnerView(){
 
     // Year months chart
     const ctxY = document.getElementById('chartYearMonths');
-    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>i===selMonthNum-1?gold:goldLight),borderRadius:6}]},options:chartDefaults});
+    if(ctxY) new Chart(ctxY,{type:'bar',data:{labels:s.yearMonthLabels,datasets:[{data:s.yearMonthData,backgroundColor:s.yearMonthLabels.map((_,i)=>(state.statYear===yearStr() && i===new Date().getMonth())?gold:goldLight),borderRadius:6}]},options:chartDefaults});
 
-    // Month days chart
+    // Month days chart — clickable
     const ctxM = document.getElementById('chartMonthDays');
-    if(ctxM) new Chart(ctxM,{type:'bar',data:{labels:s.monthDayLabels,datasets:[{data:s.monthDayData,backgroundColor:navy,borderRadius:4}]},options:chartDefaults});
+    if(ctxM) new Chart(ctxM,{type:'bar',data:{labels:s.monthDayLabels,datasets:[{data:s.monthDayData,backgroundColor:navy,borderRadius:4}]},options:{
+      ...chartDefaults,
+      onClick:(evt,elements)=>{ if(elements && elements.length>0){ openDayDetailModal(s.monthDayDates[elements[0].index]); } }
+    }});
 
-    // Type+subtype charts
-    Object.values(s.subtypeSalesByType).forEach((entry,i)=>{
-      const labels = Object.keys(entry.data);
-      const vals = Object.values(entry.data);
-      if(labels.length===0) return;
-      const ctx = document.getElementById('chartType'+i);
-      if(ctx) new Chart(ctx,{type:'bar',data:{labels,datasets:[{data:vals,backgroundColor:gold,borderRadius:5}]},options:{...chartDefaults,scales:{...chartDefaults.scales,y:{...chartDefaults.scales.y,ticks:{...chartDefaults.scales.y.ticks,callback:v=>v}}}}});
+    // All pie/doughnut charts
+    pieCharts.forEach(cfg=>{
+      const ctx = document.getElementById('canvas-'+cfg.id);
+      if(!ctx) return;
+      new Chart(ctx,{type:'doughnut',data:{labels:cfg.labels,datasets:[{data:cfg.values,backgroundColor:cfg.colors,borderWidth:2,borderColor:'#fff'}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:11,font:{size:11},color:'#5b6372'}}},
+          onClick:()=>togglePie(cfg.id)}});
     });
   });
 
