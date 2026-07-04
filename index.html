@@ -734,7 +734,7 @@ function bucketForItem(it){
   const name = (t && t.name ? t.name : (it.name||'')).toLowerCase();
   if(cat.includes('одел')) return 'Одела';
   if(cat.includes('кошул')) return 'Кошули';
-  if(name.includes('кондур')) return 'Кондури';
+  if(name.includes('кондур') || name.includes('патик')) return 'Кондури';
   if(name.includes('крават')) return 'Кравати';
   if(name.includes('каиш')) return 'Каиш';
   return 'Разно';
