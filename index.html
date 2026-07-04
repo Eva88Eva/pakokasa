@@ -160,10 +160,12 @@ table tr:hover td{background:#fcf9f0;}
 .stat-box .sub2{font-size:10.5px;color:var(--gold-light);margin-top:3px;}
 .stat-box.alt .sub2{color:var(--muted);}
 .cat-rev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:4px;}
-.cat-rev-box{background:#fffdf8;border:1.5px solid #e4ddca;border-radius:10px;padding:12px;text-align:center;}
+.cat-rev-box{background:#fffdf8;border:1.5px solid #e4ddca;border-radius:10px;padding:12px;text-align:center;cursor:pointer;transition:box-shadow .15s,border-color .15s;}
+.cat-rev-box:hover{border-color:var(--gold);box-shadow:0 2px 10px rgba(176,141,78,.18);}
 .cat-rev-box .ico{font-size:18px;margin-bottom:4px;}
 .cat-rev-box .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
 .cat-rev-box .val{font-size:15px;font-weight:700;color:var(--navy);font-family:'Playfair Display',serif;}
+.cat-rev-box .pct{font-size:11.5px;color:var(--gold);font-weight:700;margin-top:2px;}
 .section-title{font-family:'Playfair Display',serif;font-size:19px;font-weight:700;color:var(--navy);margin:26px 0 4px;padding-top:16px;border-top:2px solid var(--gold);}
 .section-title:first-of-type{border-top:none;padding-top:0;margin-top:0;}
 .section-sub{font-size:12.5px;color:var(--muted);margin-bottom:12px;}
@@ -740,14 +742,26 @@ function bucketForItem(it){
 const REV_BUCKETS = ['Одела','Кошули','Кондури','Кравати','Каиш','Разно'];
 const BUCKET_ICO = {'Одела':'&#128084;','Кошули':'&#128085;','Кондури':'&#128095;','Кравати':'&#128065;','Каиш':'&#128218;','Разно':'&#9986;'};
 // точна пропорционална вредност на еден артикл во продажба (пресметан попуст сразмерно)
-function itemRevenue(sale, it){
-  const raw = it.price*it.qty;
-  const rawTotal = Number(sale.rawTotal);
-  if(!rawTotal || rawTotal<=0 || !isFinite(rawTotal)) return raw;
-  let ratio = Number(sale.total)/rawTotal;
-  if(!isFinite(ratio) || ratio<0) ratio = 1;
-  if(ratio>1) ratio = 1;
-  return raw*ratio;
+// Распределба на попустот во една продажба: попустот секогаш се одзема прво од
+// најевтиниот артикл (по единечна цена), а ако не е доволен - продолжува кон следниот најевтин.
+// Враќа низа од промет по артикл (паралелна со sale.items), чиј збир е точно sale.total.
+function allocateItemRevenues(sale){
+  const items = sale.items||[];
+  const lineValues = items.map(it=>Math.max(0,(Number(it.price)||0)*(Number(it.qty)||0)));
+  const totalLine = lineValues.reduce((a,b)=>a+b,0);
+  const total = Number(sale.total);
+  let discountRemaining = isFinite(total) ? (totalLine-total) : 0;
+  if(!isFinite(discountRemaining) || discountRemaining<0) discountRemaining = 0;
+  if(discountRemaining>totalLine) discountRemaining = totalLine;
+  const order = items.map((it,idx)=>({idx,price:Number(it.price)||0})).sort((a,b)=>a.price-b.price);
+  const revenues = lineValues.slice();
+  order.forEach(o=>{
+    if(discountRemaining<=0) return;
+    const ded = Math.min(discountRemaining, revenues[o.idx]);
+    revenues[o.idx] -= ded;
+    discountRemaining -= ded;
+  });
+  return revenues;
 }
 // продажби во дадениот месец (YYYY-MM)
 function salesInMonth(ym){ return DB.sales.filter(s=>s.date.slice(0,7)===ym); }
@@ -784,7 +798,10 @@ function computeStats(){
 
   // --- Промет по категорија (6 групи) за месецот ---
   const catRevenue = {}; REV_BUCKETS.forEach(b=>catRevenue[b]=0);
-  monthSales.forEach(s=>s.items.forEach(it=>{ catRevenue[bucketForItem(it)] += itemRevenue(s,it); }));
+  monthSales.forEach(s=>{
+    const revs = allocateItemRevenues(s);
+    s.items.forEach((it,i)=>{ catRevenue[bucketForItem(it)] += revs[i]; });
+  });
 
   // --- Промет по месец за избраната година (bar chart) ---
   const monthNames = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
@@ -1773,6 +1790,38 @@ function openDayDetailModal(dateStr){
   `);
 }
 
+function openCategoryDetailModal(bucket){
+  const y = state.statYear, m = state.statMonth, ym = y+'-'+m;
+  const mn = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
+  const monthName = mn[parseInt(m)-1]+' '+y;
+  const monthSales = salesInMonth(ym);
+  const rows = [];
+  monthSales.forEach(s=>{
+    const revs = allocateItemRevenues(s);
+    s.items.forEach((it,i)=>{
+      if(bucketForItem(it)!==bucket) return;
+      rows.push({date:s.date, name:it.name, size:it.size, qty:it.qty, revenue:revs[i], customer:s.customerName});
+    });
+  });
+  rows.sort((a,b)=>b.date.localeCompare(a.date));
+  const total = rows.reduce((s,r)=>s+r.revenue,0);
+  showModal(`
+    <h3>${BUCKET_ICO[bucket]||''} ${bucket} — ${monthName}</h3>
+    <p class="small-muted" style="margin-bottom:14px;">Вкупно: <b>${fmt(total)}</b> &middot; Продадени ставки: <b>${rows.reduce((s,r)=>s+r.qty,0)}</b></p>
+    ${rows.length===0 ? '<div class="small-muted">Нема продажби во оваа категорија за избраниот месец.</div>' : `
+    <table><thead><tr><th>Датум</th><th>Артикл</th><th>Бр.</th><th>Муштерија</th><th>Промет</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td>${new Date(r.date).toLocaleDateString('mk-MK',{day:'2-digit',month:'2-digit',year:'numeric'})}</td>
+      <td>${r.name}${r.size?' ('+r.size+')':''}</td>
+      <td>${r.qty}</td>
+      <td>${r.customer||'—'}</td>
+      <td><b>${fmt(r.revenue)}</b></td>
+    </tr>`).join('')}
+    </tbody></table>`}
+    <button class="btn outline block" style="margin-top:14px;" onclick="closeModal()">Затвори</button>
+  `);
+}
+
 function renderOwnerView(){
   const s = computeStats();
   const mn = ['Јан','Фев','Мар','Апр','Мај','Јун','Јул','Авг','Сеп','Окт','Ное','Дек'];
@@ -1825,8 +1874,9 @@ function renderOwnerView(){
 
     <div class="card" style="margin-top:18px;">
       <div class="card-title">Промет по категорија — ${monthName} (вкупни продажби, ден)</div>
+      <div class="section-sub" style="margin-bottom:8px;">Кликни на картичка за да ги видиш конкретните продажби</div>
       <div class="cat-rev-grid">
-        ${REV_BUCKETS.map(b=>`<div class="cat-rev-box"><div class="ico">${BUCKET_ICO[b]}</div><div class="lbl">${b}</div><div class="val">${fmt(s.catRevenue[b])}</div></div>`).join('')}
+        ${REV_BUCKETS.map(b=>`<div class="cat-rev-box" onclick="openCategoryDetailModal('${b}')"><div class="ico">${BUCKET_ICO[b]}</div><div class="lbl">${b}</div><div class="val">${fmt(s.catRevenue[b])}</div><div class="pct">${s.monthRevTotal>0 ? Math.round(s.catRevenue[b]/s.monthRevTotal*100) : 0}% од прометот</div></div>`).join('')}
       </div>
     </div>
 
