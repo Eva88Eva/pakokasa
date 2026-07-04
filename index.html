@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Pako Classic — Менаџер на продажба</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
@@ -1905,6 +1905,13 @@ function renderOwnerView(){
 
   // Draw charts after DOM update
   requestAnimationFrame(()=>{
+    if(typeof Chart === 'undefined'){
+      console.error('Chart.js не е вчитан — проверете интернет врска/мрежа или дали CDN скриптата е блокирана.');
+      document.querySelectorAll('.chart-wrap').forEach(el=>{
+        el.innerHTML = '<div class="small-muted" style="padding:20px 0;text-align:center;">⚠️ Графиконите не можат да се вчитаат (Chart.js не е достапен). Проверете ја интернет врската и рефрешувајте ја страницата.</div>';
+      });
+      return;
+    }
     const gold = '#b08d4e'; const goldLight = '#d9bb7e'; const navy = '#101b2d';
     const chartDefaults = {
       responsive:true, maintainAspectRatio:false,
@@ -1917,10 +1924,12 @@ function renderOwnerView(){
     function freshChart(ctx, config){
       if(!ctx) return;
       try{
-        const existing = window.Chart.getChart ? window.Chart.getChart(ctx) : null;
-        if(existing) existing.destroy();
+        if(typeof Chart.getChart==='function'){
+          const existing = Chart.getChart(ctx);
+          if(existing) existing.destroy();
+        }
         new Chart(ctx, config);
-      }catch(err){ console.error('Грешка при цртање графикон ('+ctx.id+'):', err); }
+      }catch(err){ console.error('Грешка при цртање графикон ('+(ctx.id||'?')+'):', err); }
     }
 
     // Year months chart
